@@ -5,6 +5,7 @@
   "main": "game.js",
   "scripts": {
     "build": "esbuild src/game.js --bundle --minify --outfile=dist/game.js",
+    "obfuscate": "javascript-obfuscator ./dist --control-flow-flattening --string-array-encoding --compact true --self-defending true --identifier-names-generator hexadecimal --output ./dist-obfuscated",
     "dev": "esbuild src/game.js --bundle --outfile=dist/game.js --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -12,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "esbuild": "^0.24.2"
+    "esbuild": "^0.24.2",
+    "javascript-obfuscator": "^4.1.1"
   }
 }

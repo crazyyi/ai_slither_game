@@ -1,0 +1,3 @@
+[build]
+  command = "npm run build && npm run obfuscate" # Build first, then obfuscate
+  publish = "dist-obfuscated"  # Netlify will deploy the obfuscated code from this directory
