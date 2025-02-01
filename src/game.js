@@ -11,8 +11,8 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 200;
-const INITIAL_FOOD_COUNT = 60;
+const MAX_TOTAL_FOODS = 240;
+const INITIAL_FOOD_COUNT = 80;
 const NUM_OF_BOTS = 5;
 const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
 const UPSCALE_LENGTH_LV1 = 150;
@@ -136,12 +136,14 @@ class Snake {
     this.trail = []; // Array to store the trail segments
     this.trailMaxLength = 25; // Adjust trail length
 
-    this.turningSpeed = 0.35; // Adjust this value to control turning speed
-    this.targetDirection = { ...this.direction }; // Store the target direction
+    this.turningSpeed = 0.45; // Increased turning speed for sharper turns
+    this.targetDirection = { ...this.direction };
 
-    // For smooth and organic movements
-    this.segmentSmoothing = 0.25; // Lower = more flexible (0.1-0.3)
-    this.maxBendAngle = 70; // Maximum bend between segments (degrees)
+    // Dynamic movement parameters
+    this.segmentSmoothing = 0.15; // Balanced responsiveness
+    this.maxBendAngle = 55; // Increased maximum bend angle
+    this.segmentSpacing = 2.2; // Tighter base spacing
+    this.turnTighteningFactor = 0.3; // How much segments tighten during turns
   }
 
   reset(x, y) {
@@ -308,6 +310,28 @@ class Snake {
       this.direction.y /= length;
     }
 
+    // Add direction smoothing
+    if (this.targetDirection) {
+      const directionSmoothing = 0.15; // Reduced for smoother turns
+      const currentAngle = Math.atan2(this.direction.y, this.direction.x);
+      const targetAngle = Math.atan2(
+        this.targetDirection.y,
+        this.targetDirection.x
+      );
+
+      // Calculate the smallest angle difference
+      let angleDiff = targetAngle - currentAngle;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+      // Apply smooth rotation
+      const newAngle = currentAngle + angleDiff * directionSmoothing;
+
+      // Update direction with smoothed angle
+      this.direction.x = Math.cos(newAngle);
+      this.direction.y = Math.sin(newAngle);
+    }
+
     const head = this.segments[0];
     const moveAmount = this.speed * deltaTime;
 
@@ -315,12 +339,6 @@ class Snake {
       x: head.x + this.direction.x * moveAmount, // Use deltaTime
       y: head.y + this.direction.y * moveAmount, // Use deltaTime
     };
-
-    // Wrap around screen edges
-    if (newHead.x < 0) newHead.x = WORLD_WIDTH;
-    if (newHead.x > WORLD_WIDTH) newHead.x = 0;
-    if (newHead.y < 0) newHead.y = WORLD_HEIGHT;
-    if (newHead.y > WORLD_HEIGHT) newHead.y = 0;
 
     this.segments.unshift(newHead);
 
@@ -344,9 +362,15 @@ class Snake {
       const dy = prev.y - curr.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance > this.size * 3) {
-        // Increased spacing threshold
-        const ratio = (this.size * 1.5) / distance; // More aggressive correction
+      // Dynamic spacing based on turn intensity
+      const turnIntensity =
+        Math.abs(this.targetDirection.x - this.direction.x) +
+        Math.abs(this.targetDirection.y - this.direction.y);
+      const maxSpacing =
+        this.size * (3 - this.turnTighteningFactor * turnIntensity);
+
+      if (distance > maxSpacing) {
+        const ratio = (this.size * (1.5 + turnIntensity)) / distance;
         curr.x = prev.x - dx * ratio;
         curr.y = prev.y - dy * ratio;
       }
@@ -359,54 +383,70 @@ class Snake {
   }
 
   applySegmentSmoothing(deltaTime) {
-    // Improved smoothing with velocity-based interpolation and cubic easing
+    // Tighter following parameters
+    const MIN_SEGMENT_DISTANCE = this.size * 2; // Minimum distance between segments
+    const MAX_SEGMENT_DISTANCE = this.size * 2.5; // Maximum allowed distance
+    const SMOOTHING_STRENGTH = 0.25; // Increased for more responsive following
+
     for (let i = 1; i < this.segments.length; i++) {
       const prevSegment = this.segments[i - 1];
       const currentSegment = this.segments[i];
 
-      // Calculate dynamic smoothing based on segment position
-      const smoothing =
-        this.segmentSmoothing * (1 - (i / this.segments.length) * 0.7);
-
-      // Calculate target position with distance-based offset
+      // Calculate current distance between segments
       const dx = prevSegment.x - currentSegment.x;
       const dy = prevSegment.y - currentSegment.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      // Allow more flexibility for first segment
-      const targetDistance =
-        i === 1
-          ? this.size * 4 // More space behind head
-          : this.size * 3.5; // Original spacing for other segments
+      const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
-      // Normalize direction vector
-      const dirX = dx / distance || 0;
-      const dirY = dy / distance || 0;
+      // Skip if segments are already close enough
+      if (currentDistance < MIN_SEGMENT_DISTANCE) continue;
 
-      // Calculate target position with spring-like tension
+      // Calculate direction vector
+      const dirX = dx / currentDistance;
+      const dirY = dy / currentDistance;
+
+      // Calculate target position
+      let targetDistance = MIN_SEGMENT_DISTANCE;
+
+      // If turning, reduce segment spacing slightly
+      const turnIntensity = Math.abs(
+        this.targetDirection.x -
+          this.direction.x +
+          this.targetDirection.y -
+          this.direction.y
+      );
+      targetDistance -= turnIntensity * this.size * 0.3; // Reduce spacing during turns
+
+      // Calculate target position
       const targetX = prevSegment.x - dirX * targetDistance;
       const targetY = prevSegment.y - dirY * targetDistance;
 
-      // Velocity-based interpolation
+      // Apply velocity-based movement with increased responsiveness
       if (!currentSegment.vx) currentSegment.vx = 0;
       if (!currentSegment.vy) currentSegment.vy = 0;
 
-      const ax = (targetX - currentSegment.x) * smoothing * deltaTime;
-      const ay = (targetY - currentSegment.y) * smoothing * deltaTime;
+      // Stronger correction when segments are too far apart
+      const distanceRatio = Math.min(currentDistance / MAX_SEGMENT_DISTANCE, 1);
+      const correctionStrength = SMOOTHING_STRENGTH * (1 + distanceRatio);
 
-      const dampingFactor = 0.9;
+      // Update velocities with stronger correction
+      currentSegment.vx += (targetX - currentSegment.x) * correctionStrength;
+      currentSegment.vy += (targetY - currentSegment.y) * correctionStrength;
 
-      currentSegment.vx = currentSegment.vx * dampingFactor + ax;
-      currentSegment.vy = currentSegment.vy * dampingFactor + ay;
+      // Apply damping to prevent oscillation
+      const DAMPING = 0.8;
+      currentSegment.vx *= DAMPING;
+      currentSegment.vy *= DAMPING;
 
+      // Update position
       currentSegment.x += currentSegment.vx * deltaTime;
       currentSegment.y += currentSegment.vy * deltaTime;
 
-      // Apply smooth bending with averaged direction
-      if (i > 1) {
-        const prevAngle = this.calculateBendAngle(i - 1);
-        const currentAngle = this.calculateBendAngle(i);
-        const averagedAngle = (prevAngle + currentAngle) / 2;
-        this.applyBend(currentSegment, averagedAngle);
+      // Force correction if segment is too far
+      if (currentDistance > MAX_SEGMENT_DISTANCE) {
+        currentSegment.x = prevSegment.x - dirX * MAX_SEGMENT_DISTANCE;
+        currentSegment.y = prevSegment.y - dirY * MAX_SEGMENT_DISTANCE;
+        currentSegment.vx = 0;
+        currentSegment.vy = 0;
       }
     }
   }
@@ -436,152 +476,119 @@ class Snake {
 
   updateAI(foods, otherSnakes) {
     const head = this.segments[0];
-    const WANDER_RADIUS = 50;
-    const WANDER_AMPLITUDE = 2; // Adjust for wandering strength
-    const AVOIDANCE_FORCE = 10; // Adjust for avoidance strength
-    const PREDICTION_STEPS = 5; // Adjust for prediction steps
-    const PREDICTION_DISTANCE = 20; // Adjust for prediction distance
-    const APPROACH_DISTANCE_MULTIPLIER = 3; // Adjust for cautiousness
-    const THREAT_RANGE = 100; // Adjust threat range
-    const JITTER_AMOUNT = 0.3; // Adjust jitter amount
-    const TARGET_DISTANCE_LIMIT = 100;
 
-    let bestTarget = null; // Initialize bestTarget
-    let avoidanceVector = { x: 0, y: 0 };
+    // Configuration constants
+    const DANGER_DISTANCE = 50; // Reduced from 80 for more aggressive play
+    const FOOD_DETECTION_RANGE = 200;
+    const SNAKE_TARGET_RANGE = 300; // Increased from 250 for more aggressive targeting
+    const MIN_SNAKE_SIZE_TO_CHASE = 0.85; // Target snakes up to 85% of our size
 
-    // Find nearest food (prioritize flying food)
+    // Current movement vector
+    let moveX = this.direction.x;
+    let moveY = this.direction.y;
+
+    // Track potential targets and threats
     let nearestFood = null;
-    let minFoodDistance = Infinity;
+    let minFoodDistance = FOOD_DETECTION_RANGE;
+    let targetSnake = null;
+    let minTargetDistance = SNAKE_TARGET_RANGE;
+    let nearestThreat = null;
+    let minThreatDistance = DANGER_DISTANCE;
 
+    // Analyze surroundings
+    otherSnakes.forEach((otherSnake) => {
+      if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
+        const otherHead = otherSnake.segments[0];
+        const dx = otherHead.x - head.x;
+        const dy = otherHead.y - head.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Size comparison for decision making
+        const sizeRatio = otherSnake.segments.length / this.segments.length;
+
+        if (sizeRatio > 1.2 && distance < DANGER_DISTANCE * 1.5) {
+          // This is a significant threat - track it
+          if (distance < minThreatDistance) {
+            minThreatDistance = distance;
+            nearestThreat = otherSnake;
+          }
+        } else if (
+          sizeRatio < MIN_SNAKE_SIZE_TO_CHASE &&
+          distance < SNAKE_TARGET_RANGE
+        ) {
+          // This is potential prey - track it
+          if (distance < minTargetDistance) {
+            minTargetDistance = distance;
+            targetSnake = otherSnake;
+          }
+        }
+
+        // Always avoid immediate collisions with any snake
+        if (distance < DANGER_DISTANCE) {
+          const repulsionForce = 1 - distance / DANGER_DISTANCE;
+          moveX -= (dx / distance) * repulsionForce * 2;
+          moveY -= (dy / distance) * repulsionForce * 2;
+        }
+      }
+    });
+
+    // Find nearest food
     foods.forEach((food) => {
-      const distance = this.getDistance(head, food.position);
+      const dx = food.position.x - head.x;
+      const dy = food.position.y - head.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
       if (distance < minFoodDistance) {
         minFoodDistance = distance;
         nearestFood = food;
       }
     });
 
-    if (nearestFood) {
-      bestTarget = nearestFood.position;
-    }
-
-    otherSnakes.forEach((otherSnake) => {
-      if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
-        const otherHead = otherSnake.segments[0];
-        let minThreatDistance = Infinity;
-
-        // Predictive avoidance
-        let futureHead = { ...otherHead };
-        for (let i = 0; i < PREDICTION_STEPS; i++) {
-          futureHead.x += otherSnake.direction.x * PREDICTION_DISTANCE;
-          futureHead.y += otherSnake.direction.y * PREDICTION_DISTANCE;
-
-          const threatDistance = this.getDistance(head, futureHead);
-          if (threatDistance < minThreatDistance) {
-            minThreatDistance = threatDistance;
-            const dx = futureHead.x - head.x;
-            const dy = futureHead.y - head.y;
-            const approachDistance =
-              otherSnake.size * APPROACH_DISTANCE_MULTIPLIER;
-            bestTarget = {
-              x: futureHead.x + (dx * approachDistance) / threatDistance,
-              y: futureHead.y + (dy * approachDistance) / threatDistance,
-            };
-          }
-        }
-
-        // Immediate avoidance
-        for (const segment of otherSnake.segments) {
-          const segmentDistance = this.getDistance(head, segment);
-          if (segmentDistance < this.size * 2) {
-            const dx = head.x - segment.x;
-            const dy = head.y - segment.y;
-            const avoidanceDirection = {
-              x: dx / segmentDistance,
-              y: dy / segmentDistance,
-            };
-            avoidanceVector.x += avoidanceDirection.x * AVOIDANCE_FORCE;
-            avoidanceVector.y += avoidanceDirection.y * AVOIDANCE_FORCE;
-          }
-        }
-      }
-    });
-
-    // Apply avoidance and wandering (Combined)
-    if (bestTarget) {
-      bestTarget.x += avoidanceVector.x;
-      bestTarget.y += avoidanceVector.y;
-
-      // Wandering
-      const wanderOffset = Math.random() * Math.PI * 2;
-      bestTarget.x += Math.cos(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE;
-      bestTarget.y += Math.sin(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE;
-
-      // Jitter (Added after wandering)
-      bestTarget.x += (Math.random() - 0.5) * JITTER_AMOUNT;
-      bestTarget.y += (Math.random() - 0.5) * JITTER_AMOUNT;
-
-      const dx = bestTarget.x - head.x;
-      const dy = bestTarget.y - head.y;
-      const targetDistance = Math.sqrt(dx * dx + dy * dy);
-
-      if (targetDistance > 0) {
-        bestTarget.x = head.x + (dx / targetDistance) * TARGET_DISTANCE_LIMIT;
-        bestTarget.y = head.y + (dy / targetDistance) * TARGET_DISTANCE_LIMIT;
-      }
+    // Decision making priority
+    if (nearestThreat) {
+      // Escape from threat
+      const dx = head.x - nearestThreat.segments[0].x;
+      const dy = head.y - nearestThreat.segments[0].y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      moveX = dx / distance;
+      moveY = dy / distance;
+    } else if (targetSnake && Math.random() < 0.7) {
+      // 70% chance to chase prey
+      // Chase target snake
+      moveX = (targetSnake.segments[0].x - head.x) / minTargetDistance;
+      moveY = (targetSnake.segments[0].y - head.y) / minTargetDistance;
+    } else if (nearestFood) {
+      // Move toward food
+      moveX = (nearestFood.position.x - head.x) / minFoodDistance;
+      moveY = (nearestFood.position.y - head.y) / minFoodDistance;
     } else {
-      // If no food, continue in current direction with some wandering.
-      const wanderOffset = Math.random() * Math.PI * 2;
-      bestTarget = {
-        x:
-          head.x +
-          this.direction.x +
-          Math.cos(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE,
-        y:
-          head.y +
-          this.direction.y +
-          Math.sin(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE,
-      };
+      // No immediate targets - explore with purpose
+      // Use sine waves for smooth, natural-looking movement
+      const time = Date.now() * 0.001;
+      moveX = Math.cos(time * 0.5);
+      moveY = Math.sin(time * 0.7);
     }
 
-    // *** Update direction (Consistently) ***
-    if (bestTarget) {
-      const dx = bestTarget.x - head.x;
-      const dy = bestTarget.y - head.y;
-      let desiredDirection = { x: dx, y: dy };
-      const length = Math.sqrt(
-        desiredDirection.x * desiredDirection.x +
-          desiredDirection.y * desiredDirection.y
-      );
-
-      if (length > 0) {
-        desiredDirection.x /= length;
-        desiredDirection.y /= length;
-      } else {
-        desiredDirection = { x: 1, y: 0 };
-      }
-
-      const smoothingFactor = 0.1;
-      this.direction.x =
-        this.direction.x * (1 - smoothingFactor) +
-        desiredDirection.x * smoothingFactor;
-      this.direction.y =
-        this.direction.y * (1 - smoothingFactor) +
-        desiredDirection.y * smoothingFactor;
-
-      const smoothedLength = Math.sqrt(
-        this.direction.x * this.direction.x +
-          this.direction.y * this.direction.y
-      );
-      this.direction.x /= smoothedLength;
-      this.direction.y /= smoothedLength;
+    // Normalize movement vector
+    const length = Math.sqrt(moveX * moveX + moveY * moveY);
+    let desiredDirection = { x: 0, y: 0 };
+    if (length > 0) {
+      desiredDirection = { x: moveX / length, y: moveY / length };
     }
 
-    if (nearestFood && nearestFood.isFlying) {
-      this.isChasingFlyingFood = true;
-    } else {
-      this.isChasingFlyingFood = false;
-    }
+    const smoothingFactor = 0.1; // Adjust as needed
+    this.direction.x =
+      this.direction.x * (1 - smoothingFactor) +
+      desiredDirection.x * smoothingFactor;
+    this.direction.y =
+      this.direction.y * (1 - smoothingFactor) +
+      desiredDirection.y * smoothingFactor;
+
+    const smoothedLength = Math.sqrt(
+      this.direction.x * this.direction.x + this.direction.y * this.direction.y
+    );
+    this.direction.x /= smoothedLength;
+    this.direction.y /= smoothedLength;
   }
 
   getDistance(point1, point2) {
@@ -628,50 +635,55 @@ class Snake {
     ctx.globalAlpha = this.opacity;
 
     if (this.isSpeedingUp) {
-      this.trail.forEach((segment, index) => {
+      for (let i = 0; i < this.segments.length; i++) {
+        const segment = this.segments[i];
         const screenX = segment.x - camera.x;
         const screenY = segment.y - camera.y;
 
-        // Only draw trail segments within the viewport
+        // Only draw if within viewport
         if (
           screenX >= -10 &&
           screenX <= VIEWPORT_WIDTH + 10 &&
           screenY >= -10 &&
           screenY <= VIEWPORT_HEIGHT + 10
         ) {
-          const alpha = ((index + 1) / this.trail.length) * 0.5;
+          // Gradient effect from head to tail
+          const gradientFactor = 1 - i / this.segments.length;
 
-          // Subtle Glow (drawn first)
-          const glowAlpha = alpha * 0.3; // Even more transparent
-          ctx.fillStyle = `rgba(255, 190, 0, ${glowAlpha})`; // Same orange, more transparent
+          // Subtle glow
+          const glowAlpha = 0.3 * gradientFactor;
+          ctx.fillStyle = `rgba(255, 190, 0, ${glowAlpha})`;
           ctx.beginPath();
           ctx.arc(
             screenX,
             screenY,
-            this.size * (1.4 - index / this.trail.length / 3) * scale,
+            this.size * 1.4 * scale * (1 - i / this.segments.length / 3),
             0,
             Math.PI * 2
-          ); // Slightly larger
+          );
           ctx.fill();
 
-          ctx.fillStyle = `rgba(255, 153, 0, ${alpha})`;
+          // Main trail
+          const trailAlpha = 0.5 * gradientFactor;
+          ctx.fillStyle = `rgba(255, 153, 0, ${trailAlpha})`;
           ctx.beginPath();
           ctx.arc(
             screenX,
             screenY,
-            this.size * (1.2 - index / this.trail.length / 3) * scale,
+            this.size * 1.2 * scale * (1 - i / this.segments.length / 3),
             0,
             Math.PI * 2
-          ); // Apply scale to trail size
+          );
           ctx.fill();
         }
-      });
+      }
     }
 
     ctx.fillStyle = this.color;
 
-    // Transform all coordinates relative to camera
-    this.segments.forEach((segment, index) => {
+    // Transform all coordinates relative to camera - draw from tail to head
+    for (let i = this.segments.length - 1; i >= 0; i--) {
+      const segment = this.segments[i];
       const screenX = segment.x - camera.x;
       const screenY = segment.y - camera.y;
 
@@ -682,25 +694,27 @@ class Snake {
         screenY >= -10 &&
         screenY <= VIEWPORT_HEIGHT + 10
       ) {
-        const originalSize = Math.max(
-          this.size * (1 - index / this.segments.length),
-          this.MIN_SEGMENT_SIZE
-        );
+        const originalSize = this.size; // Keep consistent size for all segments
         let size = originalSize * this.updatedScale;
 
-        if (index === 0) {
-          // Apply turn radius reduction only to head
+        if (i === 0) {
+          // Head segment
           const dot =
             this.direction.x * this.targetDirection.x +
             this.direction.y * this.targetDirection.y;
-          const turnFactor = Math.max(0.3, dot); // Scale between 0.3 and 1 based on alignment
+          const turnFactor = Math.max(0.3, dot);
           size *= turnFactor;
         }
+
         ctx.beginPath();
         ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
         ctx.fill();
+        // Add border with contrasting color
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
-    });
+    }
 
     const head = this.segments[0];
     const screenHeadX = head.x - camera.x;
@@ -1162,6 +1176,18 @@ function checkCollisions() {
     if (!snake.isAlive || snake.isDying) return;
 
     const head = snake.segments[0];
+
+    // Check border collisions
+    if (
+      head.x <= 0 ||
+      head.x >= WORLD_WIDTH ||
+      head.y <= 0 ||
+      head.y >= WORLD_HEIGHT
+    ) {
+      handleSnakeDeath(snake); // Use a function to handle death logic
+      return;
+    }
+
     const snakeDirection = snake.direction;
 
     for (let i = foods.length - 1; i >= 0; i--) {
@@ -1219,55 +1245,57 @@ function checkCollisions() {
 
         const collisionSize = k === 0 ? snake2.size : snake2.size * 0.8;
         if (distance < snake1.size + collisionSize * 0.7) {
-          // *** KEY CHANGES: Handling death and food conversion ***
-          snake1.lives = Math.max(0, snake1.lives - 1);
-          snake1.isDying = true;
-          snake1.deathProgress = 0;
-
-          if (snake1.lives <= 0) {
-            const dyingSegments = [...snake1.segments];
-            const spreadFactor = 2.5;
-            const closestFoodColor = getClosestFoodColor(snake1.color);
-
-            // Convert segments to food before removing the snake:
-            dyingSegments.forEach((segment) => {
-              const angle = Math.random() * 2 * Math.PI;
-              const radius = Math.random() * snake1.size * spreadFactor; // Use spreadFactor here
-
-              const foodX = segment.x + radius * Math.cos(angle);
-              const foodY = segment.y + radius * Math.sin(angle);
-
-              const newFood = new Food();
-              newFood.color = closestFoodColor;
-              newFood.position = { x: foodX, y: foodY };
-              foods.push(newFood);
-            });
-
-            const botIndex = bots.indexOf(snake1);
-            if (botIndex !== -1) {
-              bots.splice(botIndex, 1);
-            }
-
-            const snakeIndex = allSnakes.indexOf(snake1);
-            if (snakeIndex !== -1) {
-              allSnakes.splice(snakeIndex, 1);
-            }
-
-            const x = Math.random() * canvas.width;
-            const y = Math.random() * canvas.height;
-            const newBot = createBot(x, y, getRandomColor(), allSnakes);
-
-            allSnakes.push(newBot);
-            bots.push(newBot);
-          } else {
-            console.log(
-              `${snake1.name} lost a life! Remaining lives: ${snake1.lives}`
-            );
-          }
-          return; // Exit after collision (only one snake should be affected)
+          handleSnakeDeath(snake1); // Use the same function for snake-snake collisions
+          return; // Exit after collision
         }
       }
     }
+  }
+}
+
+function handleSnakeDeath(snake) {
+  snake.lives = Math.max(0, snake.lives - 1);
+  snake.isDying = true;
+  snake.deathProgress = 0;
+
+  if (snake.lives <= 0) {
+    const dyingSegments = [...snake.segments];
+    const spreadFactor = 2.5;
+    const closestFoodColor = getClosestFoodColor(snake.color);
+
+    dyingSegments.forEach((segment) => {
+      const angle = Math.random() * 2 * Math.PI;
+      const radius = Math.random() * snake.size * spreadFactor;
+
+      const foodX = segment.x + radius * Math.cos(angle);
+      const foodY = segment.y + radius * Math.sin(angle);
+
+      const newFood = new Food();
+      newFood.color = closestFoodColor;
+      newFood.position = { x: foodX, y: foodY };
+      foods.push(newFood);
+    });
+
+    const botIndex = bots.indexOf(snake);
+    if (botIndex !== -1) {
+      bots.splice(botIndex, 1);
+    }
+
+    const snakeIndex = allSnakes.indexOf(snake);
+    if (snakeIndex !== -1) {
+      allSnakes.splice(snakeIndex, 1);
+    }
+
+    // Create new bot (if the snake was a bot)
+    if (snake.isBot) {
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height;
+      const newBot = createBot(x, y, getRandomColor(), allSnakes);
+      allSnakes.push(newBot);
+      bots.push(newBot);
+    }
+  } else {
+    console.log(`${snake.name} lost a life! Remaining lives: ${snake.lives}`);
   }
 }
 
