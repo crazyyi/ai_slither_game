@@ -11,8 +11,8 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 400;
-const INITIAL_FOOD_COUNT = 180;
+const MAX_TOTAL_FOODS = 650;
+const INITIAL_FOOD_COUNT = 320;
 const NUM_OF_BOTS = 5;
 const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
 const UPSCALE_LENGTH_LV1 = 150;
@@ -95,12 +95,12 @@ const snakeTuning = {
   turningSpeedMultiplier: 1, // 5
   directionSmoothing: 0.2,
   minSegmentDistance: 2, // Multiplier for this.size
-  maxSegmentDistance: 2.8, // Multiplier for this.size Original: 2.5
+  maxSegmentDistance: 2.6, // Multiplier for this.size Original: 2.5
   smoothingStrength: 0.25,
   damping: 0.8,
   turnTighteningFactor: 0.3,
   maxBendAngle: 45,
-  segmentSpacing: 2.5, // Original 2.2
+  segmentSpacing: 2.3, // Original 2.2
 };
 
 class Snake {
@@ -121,7 +121,7 @@ class Snake {
     this.RESPAWN_TIME = 180;
     this.MIN_SEGMENT_SIZE = 1.5;
     this.BASE_LENGTH = 50; // Initial length (segments)
-    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 7.5); // Maximum length (segments)
+    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 9); // Maximum length (segments)
     this.GROWTH_RATE = 0.02; // Segments gained per food eaten
     this.SPEED_BOOST_COST = 2; // Segments lost per second of speed boost
     this.BASE_SPEED = 160;
@@ -1445,7 +1445,7 @@ function updateStats() {
   // Position stats div *inside* the canvas:
   statsDiv.style.position = "absolute";
   statsDiv.style.top = "56px"; // Adjust as needed
-  statsDiv.style.left = "1040px"; // Adjust as needed
+  statsDiv.style.left = "1058px"; // Adjust as needed
   statsDiv.style.color = "white"; // White text
   statsDiv.style.fontSize = "12px";
   statsDiv.style.fontFamily = "sans-serif"; // Use a standard font
@@ -1455,35 +1455,34 @@ function updateStats() {
 }
 
 function drawRadar() {
-  radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height); // Clear radar canvas
+  radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
 
-  // Calculate radar scale (important!)
   const radarScale = Math.min(
     radarCanvas.width / WORLD_WIDTH,
     radarCanvas.height / WORLD_HEIGHT
   );
 
-  // Draw foods on the radar
+  // Draw foods on the radar (much smaller)
   foods.forEach((food) => {
     const radarX = food.position.x * radarScale;
     const radarY = food.position.y * radarScale;
 
     radarCtx.fillStyle = food.isFlying ? "gold" : "lightgreen";
     radarCtx.beginPath();
-    radarCtx.arc(radarX, radarY, 2, 0, Math.PI * 2); // Smaller food dots on radar
+    radarCtx.arc(radarX, radarY, 1, 0, Math.PI * 2); // Even smaller food dots
     radarCtx.fill();
   });
 
-  // Draw player on the radar
+  // Draw player on the radar (slightly larger)
   const playerRadarX = player.segments[0].x * radarScale;
   const playerRadarY = player.segments[0].y * radarScale;
 
   radarCtx.fillStyle = player.color;
   radarCtx.beginPath();
-  radarCtx.arc(playerRadarX, playerRadarY, 4, 0, Math.PI * 2); // Slightly larger player dot
+  radarCtx.arc(playerRadarX, playerRadarY, 2, 0, Math.PI * 2); // Smaller player dot
   radarCtx.fill();
 
-  //Draw the camera viewport on the radar
+  // Draw the camera viewport on the radar
   const cameraX = camera.x * radarScale;
   const cameraY = camera.y * radarScale;
   const cameraWidth = VIEWPORT_WIDTH * radarScale;
