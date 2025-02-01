@@ -15,7 +15,24 @@ const MAX_TOTAL_FOODS = 200;
 const INITIAL_FOOD_COUNT = 60;
 const NUM_OF_BOTS = 5;
 const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
+const UPSCALE_LENGTH_LV1 = 150;
+const UPSCALE_LENGTH_LV2 = 300;
 let lastFoodSpawn = 0; // Track the last food spawn time
+
+const basicFoodColors = [
+  "#FF0000", // Red
+  "#90EE90", // Lime Green
+  "#0000FF", // Blue
+  "#FFFF00", // Yellow
+  "#FFA500", // Orange
+  "#800080", // Purple
+  "#00FFFF", // Cyan
+  "#FF69B4", // Hot Pink
+  "#FFD700", // Gold
+  "#ADFF2F", // Green Yellow
+  "#FF4500", // Orange Red
+  "#1E90FF", // Dodger Blue
+];
 
 const botNames = [
   "Slitherin",
@@ -41,44 +58,31 @@ const botNames = [
 ];
 
 const botColors = [
-  "#0056b3", // Dark Blue
-  "#006400", // Dark Green
-  "#8B4513", // Saddle Brown
-  "#800000", // Maroon
-  "#4B0082", // Indigo
-  "#2F4F4F", // Dark Slate Gray
-  "#A0522D", // Sienna
-  "#8B0000", // Dark Red
-  "#228B22", // Forest Green
-  "#B8860B", // Dark Goldenrod
-  "#A52A2A", // Brown
-  "#DC143C", // Crimson
-  "#00008B", // Dark Blue
-  "#008B8B", // Dark Cyan
-  "#B22222", // Firebrick
-  "#FF4500", // Orange Red
-  "#9932CC", // Dark Orchid
-  "#8FBC8F", // Dark Sea Green
-  "#282c34", // Darker Gray/Near Black
-  "#003f5c", // Dark Blue
-  "#58508d", // Dark Purple
-  "#bc5090", // Dark Pink/Magenta
-  "#ff6361", // Dark Coral/Red
-  "#ffa60a", // Dark Orange/Gold
-  "#ffd700", // Darker Yellow/Gold
-  "#008000", // Dark Green
-  "#006400", // Forest Green
-  "#228B22", // Medium Sea Green
-  "#008080", // Teal
-  "#4682B4", // Steel Blue
-  "#2F4F4F", // Dark Slate Gray
-  "#708090", // Slate Gray
-  "#8B0000", // Dark Red
-  "#A0522D", // Sienna Brown
-  "#8B4513", // Saddle Brown
-  "#4B0082", // Indigo
-  "#9400D3", // Dark Violet
-  "#00008B", // Dark Blue
+  "#FF69B4", // Hot Pink
+  "#FFD700", // Gold
+  "#00FF00", // Lime
+  "#00FFFF", // Cyan
+  "#FF00FF", // Magenta
+  "#ADFF2F", // GreenYellow
+  "#FFA500", // Orange
+  "#FFB6C1", // LightPink
+  "#FFFF00", // Yellow
+  "#00CED1", // DarkTurquoise
+  "#90EE90", // LightGreen
+  "#FF7F50", // Coral
+  "#FF6347", // Tomato
+  "#7CFC00", // LawnGreen
+  "#AFEEEE", // PaleTurquoise
+  "#F0E68C", // Khaki
+  "#FFFAFA", // Snow
+  "#DA70D6", // Orchid
+  "#DB7093", // PaleVioletRed
+  "#FFC0CB", // Pink
+  "#FFEFD5", // PapayaWhip
+  "#FFA07A", // LightSalmon
+  "#98FB98", // PaleGreen
+  "#FFB347", // BurlyWood
+  "#FFFFE0", // LightYellow
 ];
 
 class Snake {
@@ -99,10 +103,10 @@ class Snake {
     this.RESPAWN_TIME = 180;
     this.MIN_SEGMENT_SIZE = 1.5;
     this.BASE_LENGTH = 50; // Initial length (segments)
-    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 2.5); // Maximum length (segments)
-    this.GROWTH_RATE = 0.2; // Segments gained per food eaten
+    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 6.6); // Maximum length (segments)
+    this.GROWTH_RATE = 0.02; // Segments gained per food eaten
     this.SPEED_BOOST_COST = 2; // Segments lost per second of speed boost
-    this.BASE_SPEED = 1.6;
+    this.BASE_SPEED = 160;
     this.SPEED_BOOST = 1.5;
 
     // Variables (updated during game)
@@ -131,10 +135,26 @@ class Snake {
     // Speed effects
     this.trail = []; // Array to store the trail segments
     this.trailMaxLength = 25; // Adjust trail length
+
+    this.turningSpeed = 0.35; // Adjust this value to control turning speed
+    this.targetDirection = { ...this.direction }; // Store the target direction
+
+    // For smooth and organic movements
+    this.segmentSmoothing = 0.25; // Lower = more flexible (0.1-0.3)
+    this.maxBendAngle = 70; // Maximum bend between segments (degrees)
   }
 
   reset(x, y) {
-    this.segments = [{ x, y }];
+    this.segments = [];
+    // Create head
+    this.segments.push({ x, y });
+    // Create body segments with proper spacing
+    // for (let i = 1; i < this.BASE_LENGTH; i++) {
+    //   this.segments.push({
+    //     x: x - i * this.size * 2, // Multiply by size*2 for proper spacing
+    //     y: y,
+    //   });
+    // }
     this.direction = { x: 1, y: 0 };
     this.isAlive = true;
     this.opacity = 1;
@@ -151,14 +171,31 @@ class Snake {
     return Math.floor(this.BASE_LENGTH + currentGrowth);
   }
 
-  grow() {
-    this.foodEaten += 0.2; // This is for length growth only
+  grow(foodValue) {
+    const BASE_GROWTH_RATE = 0.1;
 
-    const newSegment = { ...this.segments[this.segments.length - 1] }; // Duplicate the last segment
-    this.segments.push(newSegment); // Add a new segment at the tail
+    // Accumulate food more slowly as snake gets longer
+    const growthModifier = 1 / Math.sqrt(this.segments.length);
+
+    const scaledGrowth = foodValue * BASE_GROWTH_RATE * growthModifier;
+
+    this.foodEaten += scaledGrowth;
+
+    const newSegment = { ...this.segments[this.segments.length - 1] };
+    this.segments.push(newSegment);
   }
 
-  update(foods, otherSnakes) {
+  update(foods, otherSnakes, deltaTime) {
+    this.updatedScale = (() => {
+      if (this.segments.length > UPSCALE_LENGTH_LV2) {
+        return 2.4;
+      } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
+        return 2.0;
+      } else {
+        return 1.6;
+      }
+    })();
+
     let targetLength = this.getCurrentMaxLength();
 
     // First check if we can speed up
@@ -240,10 +277,43 @@ class Snake {
       this.updateAI(foods, otherSnakes);
     }
 
+    // Convert directions to degrees for angle calculations
+    const currentAngle =
+      (Math.atan2(this.direction.y, this.direction.x) * 180) / Math.PI;
+    const targetAngle =
+      (Math.atan2(this.targetDirection.y, this.targetDirection.x) * 180) /
+      Math.PI;
+
+    // Use lerpAngle to interpolate between angles
+    const turningSpeedMultiplier = 5; // Add this multiplier
+    const newAngle = lerpAngle(
+      currentAngle,
+      targetAngle,
+      this.turningSpeed * deltaTime * turningSpeedMultiplier
+    );
+
+    // Convert the new angle back to a direction vector
+    this.direction.x = Math.cos((newAngle * Math.PI) / 180);
+    this.direction.y = Math.sin((newAngle * Math.PI) / 180);
+
+    // *** CRUCIAL: Normalize the direction vector ***
+    const length = Math.sqrt(
+      this.direction.x * this.direction.x + this.direction.y * this.direction.y
+    );
+
+    if (length === 0) {
+      this.direction = { x: 1, y: 0 }; // Or some default
+    } else {
+      this.direction.x /= length;
+      this.direction.y /= length;
+    }
+
     const head = this.segments[0];
+    const moveAmount = this.speed * deltaTime;
+
     const newHead = {
-      x: head.x + this.direction.x * this.speed,
-      y: head.y + this.direction.y * this.speed,
+      x: head.x + this.direction.x * moveAmount, // Use deltaTime
+      y: head.y + this.direction.y * moveAmount, // Use deltaTime
     };
 
     // Wrap around screen edges
@@ -253,6 +323,8 @@ class Snake {
     if (newHead.y > WORLD_HEIGHT) newHead.y = 0;
 
     this.segments.unshift(newHead);
+
+    this.applySegmentSmoothing(deltaTime);
 
     if (this.isSpeedingUp) {
       this.trail.push({ x: newHead.x, y: newHead.y }); // Use the *new* head position
@@ -264,10 +336,98 @@ class Snake {
       this.trail = [];
     }
 
+    // Maintain segment spacing
+    for (let i = 1; i < this.segments.length; i++) {
+      const prev = this.segments[i - 1];
+      const curr = this.segments[i];
+      const dx = prev.x - curr.x;
+      const dy = prev.y - curr.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance > this.size * 3) {
+        // Increased spacing threshold
+        const ratio = (this.size * 1.5) / distance; // More aggressive correction
+        curr.x = prev.x - dx * ratio;
+        curr.y = prev.y - dy * ratio;
+      }
+    }
+
     // Maintain correct length
     while (this.segments.length > targetLength) {
       this.segments.pop();
     }
+  }
+
+  applySegmentSmoothing(deltaTime) {
+    // Improved smoothing with velocity-based interpolation and cubic easing
+    for (let i = 1; i < this.segments.length; i++) {
+      const prevSegment = this.segments[i - 1];
+      const currentSegment = this.segments[i];
+
+      // Calculate dynamic smoothing based on segment position
+      const smoothing =
+        this.segmentSmoothing * (1 - (i / this.segments.length) * 0.7);
+
+      // Calculate target position with distance-based offset
+      const dx = prevSegment.x - currentSegment.x;
+      const dy = prevSegment.y - currentSegment.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      // Allow more flexibility for first segment
+      const targetDistance =
+        i === 1
+          ? this.size * 4 // More space behind head
+          : this.size * 3.5; // Original spacing for other segments
+
+      // Normalize direction vector
+      const dirX = dx / distance || 0;
+      const dirY = dy / distance || 0;
+
+      // Calculate target position with spring-like tension
+      const targetX = prevSegment.x - dirX * targetDistance;
+      const targetY = prevSegment.y - dirY * targetDistance;
+
+      // Velocity-based interpolation
+      if (!currentSegment.vx) currentSegment.vx = 0;
+      if (!currentSegment.vy) currentSegment.vy = 0;
+
+      const ax = (targetX - currentSegment.x) * smoothing * deltaTime;
+      const ay = (targetY - currentSegment.y) * smoothing * deltaTime;
+
+      const dampingFactor = 0.9;
+
+      currentSegment.vx = currentSegment.vx * dampingFactor + ax;
+      currentSegment.vy = currentSegment.vy * dampingFactor + ay;
+
+      currentSegment.x += currentSegment.vx * deltaTime;
+      currentSegment.y += currentSegment.vy * deltaTime;
+
+      // Apply smooth bending with averaged direction
+      if (i > 1) {
+        const prevAngle = this.calculateBendAngle(i - 1);
+        const currentAngle = this.calculateBendAngle(i);
+        const averagedAngle = (prevAngle + currentAngle) / 2;
+        this.applyBend(currentSegment, averagedAngle);
+      }
+    }
+  }
+
+  calculateBendAngle(segmentIndex) {
+    const prev = this.segments[segmentIndex - 1];
+    const current = this.segments[segmentIndex];
+    const dx = current.x - prev.x;
+    const dy = current.y - prev.y;
+    return Math.atan2(dy, dx) * (180 / Math.PI);
+  }
+
+  applyBend(segment, angle) {
+    // Limit maximum bend for natural look
+    const bend = Math.min(
+      Math.max(angle, -this.maxBendAngle),
+      this.maxBendAngle
+    );
+
+    segment.x += Math.cos((bend * Math.PI) / 180) * this.size * 0.05;
+    segment.y += Math.sin((bend * Math.PI) / 180) * this.size * 0.05;
   }
 
   canSpeedBoost() {
@@ -276,165 +436,132 @@ class Snake {
 
   updateAI(foods, otherSnakes) {
     const head = this.segments[0];
+    const WANDER_RADIUS = 50;
+    const WANDER_AMPLITUDE = 2; // Adjust for wandering strength
+    const AVOIDANCE_FORCE = 10; // Adjust for avoidance strength
+    const PREDICTION_STEPS = 5; // Adjust for prediction steps
+    const PREDICTION_DISTANCE = 20; // Adjust for prediction distance
+    const APPROACH_DISTANCE_MULTIPLIER = 3; // Adjust for cautiousness
+    const THREAT_RANGE = 100; // Adjust threat range
+    const JITTER_AMOUNT = 0.3; // Adjust jitter amount
+    const TARGET_DISTANCE_LIMIT = 100;
 
+    let bestTarget = null; // Initialize bestTarget
+    let avoidanceVector = { x: 0, y: 0 };
+
+    // Find nearest food (prioritize flying food)
     let nearestFood = null;
     let minFoodDistance = Infinity;
 
     foods.forEach((food) => {
-      if (food.isFlying) {
-        // Prioritize flying food
-        const distance = this.getDistance(head, food.position);
-        if (distance < minFoodDistance) {
-          minFoodDistance = distance;
-          nearestFood = food;
-        }
-      } else if (!this.isChasingFlyingFood) {
-        // If no flying food and not already chasing one, consider regular food
-        const distance = this.getDistance(head, food.position);
-        if (distance < minFoodDistance) {
-          minFoodDistance = distance;
-          nearestFood = food;
-        }
+      const distance = this.getDistance(head, food.position);
+      if (distance < minFoodDistance) {
+        minFoodDistance = distance;
+        nearestFood = food;
       }
     });
 
-    let bestTarget = nearestFood ? nearestFood.position : null; // Default to food
-    let minThreatDistance = Infinity;
-    let threatLevel = 0;
-    let avoidanceVector = { x: 0, y: 0 };
+    if (nearestFood) {
+      bestTarget = nearestFood.position;
+    }
 
     otherSnakes.forEach((otherSnake) => {
       if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
         const otherHead = otherSnake.segments[0];
+        let minThreatDistance = Infinity;
 
-        // 1. Predict other snake's future positions (more advanced prediction)
-        let futureHead = { ...otherHead }; // Start with current head
-        for (let i = 0; i < 10; i++) {
-          // Predict 10 steps into the future (adjust as needed)
-          futureHead.x += otherSnake.direction.x * 20; // Adjust 20 for prediction distance
-          futureHead.y += otherSnake.direction.y * 20;
+        // Predictive avoidance
+        let futureHead = { ...otherHead };
+        for (let i = 0; i < PREDICTION_STEPS; i++) {
+          futureHead.x += otherSnake.direction.x * PREDICTION_DISTANCE;
+          futureHead.y += otherSnake.direction.y * PREDICTION_DISTANCE;
 
-          // 2. Calculate the "threat" distance to each future position
           const threatDistance = this.getDistance(head, futureHead);
-
           if (threatDistance < minThreatDistance) {
             minThreatDistance = threatDistance;
-
-            // 3. Target a point *beyond* the *furthest predicted* head position
             const dx = futureHead.x - head.x;
             const dy = futureHead.y - head.y;
-
-            // *** INCREASED APPROACH DISTANCE (MORE CAUTIOUS) ***
-            const approachDistance = otherSnake.size * 3; // Adjust for cautiousness (3 is a good starting point)
-
+            const approachDistance =
+              otherSnake.size * APPROACH_DISTANCE_MULTIPLIER;
             bestTarget = {
               x: futureHead.x + (dx * approachDistance) / threatDistance,
               y: futureHead.y + (dy * approachDistance) / threatDistance,
             };
           }
-
-          // *** INCREASED THREAT RANGE ***
-          threatLevel += Math.max(0, 100 - threatDistance); // Increased threat range (adjust 100 as needed)
         }
 
+        // Immediate avoidance
         for (const segment of otherSnake.segments) {
           const segmentDistance = this.getDistance(head, segment);
-
-          // 1. Immediate Avoidance (High Priority)
           if (segmentDistance < this.size * 2) {
-            // Very close!
             const dx = head.x - segment.x;
             const dy = head.y - segment.y;
             const avoidanceDirection = {
               x: dx / segmentDistance,
               y: dy / segmentDistance,
             };
-            avoidanceVector.x += avoidanceDirection.x * 10; // Stronger force
-            avoidanceVector.y += avoidanceDirection.y * 10;
-          }
-
-          // 2. Predictive Avoidance (Lower Priority)
-          const predictedSegmentX = segment.x + otherSnake.direction.x * 10;
-          const predictedSegmentY = segment.y + otherSnake.direction.y * 10;
-          const predictedSegmentDistance = this.getDistance(head, {
-            x: predictedSegmentX,
-            y: predictedSegmentY,
-          });
-          if (predictedSegmentDistance < this.size * 4) {
-            // Larger range
-            const dx = head.x - predictedSegmentX;
-            const dy = head.y - predictedSegmentY;
-            const avoidanceDirection = {
-              x: dx / predictedSegmentDistance,
-              y: dy / predictedSegmentDistance,
-            };
-
-            avoidanceVector.x += avoidanceDirection.x * 5; // Weaker force
-            avoidanceVector.y += avoidanceDirection.y * 5;
+            avoidanceVector.x += avoidanceDirection.x * AVOIDANCE_FORCE;
+            avoidanceVector.y += avoidanceDirection.y * AVOIDANCE_FORCE;
           }
         }
       }
     });
 
-    // *** APPLY AVOIDANCE VECTOR ***
+    // Apply avoidance and wandering (Combined)
     if (bestTarget) {
       bestTarget.x += avoidanceVector.x;
       bestTarget.y += avoidanceVector.y;
 
-      // Add wandering behavior here
-      const wanderRadius = 50;
+      // Wandering
       const wanderOffset = Math.random() * Math.PI * 2;
-      bestTarget.x += Math.cos(wanderOffset) * wanderRadius;
-      bestTarget.y += Math.sin(wanderOffset) * wanderRadius;
+      bestTarget.x += Math.cos(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE;
+      bestTarget.y += Math.sin(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE;
 
-      // Add some randomness to movement
-      const jitter = 0.3;
-      bestTarget.x += (Math.random() - 0.5) * jitter;
-      bestTarget.y += (Math.random() - 0.5) * jitter;
+      // Jitter (Added after wandering)
+      bestTarget.x += (Math.random() - 0.5) * JITTER_AMOUNT;
+      bestTarget.y += (Math.random() - 0.5) * JITTER_AMOUNT;
 
-      // Then normalize the vector from head to bestTarget
       const dx = bestTarget.x - head.x;
       const dy = bestTarget.y - head.y;
       const targetDistance = Math.sqrt(dx * dx + dy * dy);
 
       if (targetDistance > 0) {
-        bestTarget.x = head.x + (dx / targetDistance) * 100; // Limit target distance
-        bestTarget.y = head.y + (dy / targetDistance) * 100; // Limit target distance
+        bestTarget.x = head.x + (dx / targetDistance) * TARGET_DISTANCE_LIMIT;
+        bestTarget.y = head.y + (dy / targetDistance) * TARGET_DISTANCE_LIMIT;
       }
     } else {
-      this.direction.x += avoidanceVector.x * 0.1;
-      this.direction.y += avoidanceVector.y * 0.1;
+      // If no food, continue in current direction with some wandering.
+      const wanderOffset = Math.random() * Math.PI * 2;
+      bestTarget = {
+        x:
+          head.x +
+          this.direction.x +
+          Math.cos(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE,
+        y:
+          head.y +
+          this.direction.y +
+          Math.sin(wanderOffset) * WANDER_RADIUS * WANDER_AMPLITUDE,
+      };
+    }
 
+    // *** Update direction (Consistently) ***
+    if (bestTarget) {
+      const dx = bestTarget.x - head.x;
+      const dy = bestTarget.y - head.y;
+      let desiredDirection = { x: dx, y: dy };
       const length = Math.sqrt(
-        this.direction.x * this.direction.x +
-          this.direction.y * this.direction.y
+        desiredDirection.x * desiredDirection.x +
+          desiredDirection.y * desiredDirection.y
       );
-      this.direction.x /= length;
-      this.direction.y /= length;
 
-      this.speed = this.baseSpeed;
-      return;
-    }
+      if (length > 0) {
+        desiredDirection.x /= length;
+        desiredDirection.y /= length;
+      } else {
+        desiredDirection = { x: 1, y: 0 };
+      }
 
-    if (nearestFood && nearestFood.isFlying) {
-      this.isChasingFlyingFood = true; // Set flag
-    } else {
-      this.isChasingFlyingFood = false; // Reset flag when not chasing flying food
-    }
-
-    const dx = bestTarget.x - head.x;
-    const dy = bestTarget.y - head.y;
-    const desiredDirection = { x: dx, y: dy };
-    const length = Math.sqrt(
-      desiredDirection.x * desiredDirection.x +
-        desiredDirection.y * desiredDirection.y
-    );
-
-    if (length > 0) {
-      desiredDirection.x /= length;
-      desiredDirection.y /= length;
-
-      const smoothingFactor = 0.1; // Adjust this value (0.0 - 1.0)
+      const smoothingFactor = 0.1;
       this.direction.x =
         this.direction.x * (1 - smoothingFactor) +
         desiredDirection.x * smoothingFactor;
@@ -448,6 +575,12 @@ class Snake {
       );
       this.direction.x /= smoothedLength;
       this.direction.y /= smoothedLength;
+    }
+
+    if (nearestFood && nearestFood.isFlying) {
+      this.isChasingFlyingFood = true;
+    } else {
+      this.isChasingFlyingFood = false;
     }
   }
 
@@ -553,7 +686,16 @@ class Snake {
           this.size * (1 - index / this.segments.length),
           this.MIN_SEGMENT_SIZE
         );
-        const size = originalSize * scale;
+        let size = originalSize * this.updatedScale;
+
+        if (index === 0) {
+          // Apply turn radius reduction only to head
+          const dot =
+            this.direction.x * this.targetDirection.x +
+            this.direction.y * this.targetDirection.y;
+          const turnFactor = Math.max(0.3, dot); // Scale between 0.3 and 1 based on alignment
+          size *= turnFactor;
+        }
         ctx.beginPath();
         ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
         ctx.fill();
@@ -595,21 +737,18 @@ class Snake {
       );
       ctx.fill();
 
-      // Draw iris
+      // *** Iris Tracking (Simpler - Based on targetDirection) - Corrected ***
+      const irisOffset = 1; // Reduced offset to keep irises inside
       const irisSize = eyeSize * 0.8;
-      const dxLeft = this.cursorX - (screenHeadX + eyeX - eyeY);
-      const dyLeft = this.cursorY - (screenHeadY + eyeY + eyeX);
-      const distanceLeft = Math.sqrt(dxLeft * dxLeft + dyLeft * dyLeft);
-      const irisXLeft = (dxLeft / distanceLeft) * (eyeSize - irisSize);
-      const irisYLeft = (dyLeft / distanceLeft) * (eyeSize - irisSize);
 
-      const dxRight = this.cursorX - (screenHeadX + eyeX + eyeY);
-      const dyRight = this.cursorY - (screenHeadY + eyeY - eyeX);
-      const distanceRight = Math.sqrt(dxRight * dxRight + dyRight * dyRight);
-      const irisXRight = (dxRight / distanceRight) * (eyeSize - irisSize);
-      const irisYRight = (dyRight / distanceRight) * (eyeSize - irisSize);
+      // Calculate iris positions *relative to the eye centers*
+      const irisXLeft = this.targetDirection.x * irisOffset;
+      const irisYLeft = this.targetDirection.y * irisOffset;
 
-      ctx.fillStyle = "black";
+      const irisXRight = this.targetDirection.x * irisOffset;
+      const irisYRight = this.targetDirection.y * irisOffset;
+
+      ctx.fillStyle = "black"; // Iris color
       ctx.beginPath();
       ctx.arc(
         screenHeadX + eyeX - eyeY + irisXLeft,
@@ -617,14 +756,14 @@ class Snake {
         irisSize,
         0,
         Math.PI * 2
-      );
+      ); // Left eye iris
       ctx.arc(
         screenHeadX + eyeX + eyeY + irisXRight,
         screenHeadY + eyeY - eyeX + irisYRight,
         irisSize,
         0,
         Math.PI * 2
-      );
+      ); // Right eye iris
       ctx.fill();
 
       // Draw name
@@ -655,6 +794,9 @@ class Food {
     this.shadowColor = this.isFlying
       ? "rgba(255, 215, 0, 0.3)"
       : "rgba(144, 238, 144, 0.3)"; // Gold shadow, lightgreen shadow
+
+    this.floatingSpeed = 0.01; // Adjust floating speed
+    this.floatingAmplitude = 0.8; // Adjust floating amplitude (how high/low it goes)
 
     if (this.isFlying) {
       this.blinkInterval = 500; // Adjust blink interval (milliseconds)
@@ -766,9 +908,18 @@ class Food {
   }
 
   draw() {
+    let floatingOffset = 0;
+
+    if (!this.isFlying) {
+      // *** KEY CHANGE: Apply floating only if NOT flying ***
+      const time = Date.now() * this.floatingSpeed;
+      floatingOffset =
+        Math.sin(time + this.position.y) * this.floatingAmplitude;
+    }
+
     // Transform coordinates relative to camera
     const screenX = this.position.x - camera.x;
-    const screenY = this.position.y - camera.y;
+    const screenY = this.position.y - camera.y + floatingOffset; // Apply floating effect to y-coordinate
 
     // Only draw if within viewport
     if (
@@ -777,6 +928,14 @@ class Food {
       screenY >= -10 &&
       screenY <= VIEWPORT_HEIGHT + 10
     ) {
+      if (!this.isFlying) {
+        // *** KEY CHANGE: Draw glow only if NOT flying ***
+        ctx.fillStyle = this.shadowColor;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, this.size * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.fillStyle = this.color;
       ctx.beginPath();
       ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2);
@@ -820,6 +979,17 @@ class Food {
 
 function getRandomBotColor() {
   return botColors[Math.floor(Math.random() * botColors.length)];
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+// lerpAngle function (outside the class) - Handles angle wrapping
+function lerpAngle(a, b, t) {
+  let diff = (b - a + 360) % 360;
+  if (diff > 180) diff -= 360; // Alternative wrap-around
+  return a + diff * t;
 }
 
 const camera = {
@@ -887,25 +1057,38 @@ setInterval(() => {
 document.addEventListener("mousemove", (e) => {
   if (!player.isAlive || player.isDying) return;
 
-  const rect = canvas.getBoundingClientRect();
+  // Calculate mouse position relative to camera and world coordinates
+  const mouseX = e.clientX - canvas.offsetLeft + camera.x;
+  const mouseY = e.clientY - canvas.offsetTop + camera.y;
 
-  // Add camera offset to get world coordinates
-  const mouseX = e.clientX - rect.left + camera.x;
-  const mouseY = e.clientY - rect.top + camera.y;
-
+  // Calculate direction relative to snake head
   const head = player.segments[0];
   const dx = mouseX - head.x;
   const dy = mouseY - head.y;
-  const length = Math.sqrt(dx * dx + dy * dy);
 
+  let newDirection = { x: dx, y: dy };
+
+  const length = Math.sqrt(
+    newDirection.x * newDirection.x + newDirection.y * newDirection.y
+  );
   if (length > 0) {
-    player.direction.x = dx / length;
-    player.direction.y = dy / length;
+    newDirection.x /= length;
+    newDirection.y /= length;
+  } else {
+    newDirection = { x: 1, y: 0 };
   }
 
-  // Update cursor position for eye movement
-  player.cursorX = e.clientX - rect.left;
-  player.cursorY = e.clientY - rect.top;
+  const targetSmoothing = 0.5; // Slightly increased for more responsive movement
+  player.targetDirection.x = lerp(
+    player.targetDirection.x,
+    newDirection.x,
+    targetSmoothing
+  );
+  player.targetDirection.y = lerp(
+    player.targetDirection.y,
+    newDirection.y,
+    targetSmoothing
+  );
 });
 
 document.addEventListener("keydown", (event) => {
@@ -933,6 +1116,46 @@ document.addEventListener("mouseup", (event) => {
     player.isSpeedingUp = false;
   }
 });
+
+function getClosestFoodColor(snakeColor) {
+  let closestColor = null;
+  let minDistance = Infinity;
+
+  const snakeRGB = hexToRgb(snakeColor); // Helper function (see below)
+
+  basicFoodColors.forEach((foodColor) => {
+    const foodRGB = hexToRgb(foodColor);
+    const distance = colorDistance(snakeRGB, foodRGB); // Helper function (see below)
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestColor = foodColor;
+    }
+  });
+
+  return closestColor;
+}
+
+// Helper function to convert hex to RGB
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+// Helper function to calculate color distance (Euclidean distance)
+function colorDistance(rgb1, rgb2) {
+  const rWeight = 0.3; // Adjust these weights as needed
+  const gWeight = 0.59;
+  const bWeight = 0.11;
+
+  return Math.sqrt(
+    rWeight * Math.pow(rgb1.r - rgb2.r, 2) +
+      gWeight * Math.pow(rgb1.g - rgb2.g, 2) +
+      bWeight * Math.pow(rgb1.b - rgb2.b, 2)
+  );
+}
 
 function checkCollisions() {
   allSnakes.forEach((snake) => {
@@ -969,7 +1192,7 @@ function checkCollisions() {
         }
 
         if (snake.segments.length < snake.MAX_LENGTH) {
-          snake.grow();
+          snake.grow(food.value);
         }
 
         snake.foodEaten += food.value * 0.2;
@@ -1002,10 +1225,9 @@ function checkCollisions() {
           snake1.deathProgress = 0;
 
           if (snake1.lives <= 0) {
-            console.log(`${snake1.name} is out of lives!`);
-
             const dyingSegments = [...snake1.segments];
             const spreadFactor = 2.5;
+            const closestFoodColor = getClosestFoodColor(snake1.color);
 
             // Convert segments to food before removing the snake:
             dyingSegments.forEach((segment) => {
@@ -1016,6 +1238,7 @@ function checkCollisions() {
               const foodY = segment.y + radius * Math.sin(angle);
 
               const newFood = new Food();
+              newFood.color = closestFoodColor;
               newFood.position = { x: foodX, y: foodY };
               foods.push(newFood);
             });
@@ -1125,7 +1348,7 @@ function drawRadar() {
   radarCtx.strokeRect(cameraX, cameraY, cameraWidth, cameraHeight);
 }
 
-function update() {
+function update(deltaTime) {
   const allSnakesCopy = [...allSnakes]; // Create a copy to avoid concurrent modification issues.
 
   // Update camera position based on player position
@@ -1180,7 +1403,7 @@ function update() {
   });
 
   allSnakesCopy.forEach((snake) => {
-    snake.update(foods, allSnakesCopy);
+    snake.update(foods, allSnakesCopy, deltaTime);
     snake.draw();
   });
 
@@ -1188,15 +1411,25 @@ function update() {
   updateStats();
 }
 
+let lastTime = performance.now();
+
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawRadar();
-  update();
+
+  const currentTime = performance.now();
+  let deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+
+  // Clamp deltaTime to prevent huge jumps
+  deltaTime = Math.min(deltaTime, 1 / 30); // Cap at 1/30th of a second
+
+  update(deltaTime);
 
   const gameOver = player.lives <= 0;
 
   if (!gameOver) {
+    lastTime = currentTime;
     requestAnimationFrame(gameLoop);
   } else {
     // Game Over Overlay

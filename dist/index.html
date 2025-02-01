@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Snake Game with Bots</title>
+  <style>
+    #gameCanvas {
+      border: 1px solid black;
+      background: #1e1e1e;
+    }
+
+    #radarCanvas {
+      /* ... other styles ... */
+      opacity: 0.9;
+      /* Adjust the value between 0 (fully transparent) and 1 (fully opaque) */
+      bottom: 120px;
+      right: 440px;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background: #ffffff;
+    }
+
+    #stats {
+      margin: 10px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      position: absolute;
+      /* Needed for positioning inside canvas */
+      /* top and left are set in JavaScript */
+      background-color: rgba(255, 255, 255, 0.7);
+      /* Transparent white background */
+      font-size: 14px;
+      /* Smaller font size */
+      padding: 5px;
+      /* Smaller padding */
+      border: 1px solid rgba(204, 204, 204, 0.5);
+      /* Slightly more transparent border */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      /* More subtle shadow */
+    }
+
+    .player-stats {
+      margin: 5px;
+      padding: 5px;
+      border-radius: 3px;
+    }
+
+    .alive {
+      background-color: #e8f5e9;
+    }
+
+    .dead {
+      background-color: #ffebee;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="stats"></div>
+  <canvas id="gameCanvas" width="800" height="700" style="position: relative;"></canvas>
+  <canvas id="radarCanvas" width="160" height="120" style="position: absolute; border: 1px solid white;"></canvas>
+  <script src="game.js"></script>
+</body>
+
+</html>
