@@ -1,6 +1,6 @@
 const canvas = document.getElementById("gameCanvas");
-const WORLD_HEIGHT = canvas.height * 3;
-const WORLD_WIDTH = canvas.width * 3;
+const WORLD_HEIGHT = canvas.height * 4;
+const WORLD_WIDTH = canvas.width * 4;
 const VIEWPORT_WIDTH = canvas.width;
 const VIEWPORT_HEIGHT = canvas.height;
 
@@ -11,12 +11,16 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 240;
-const INITIAL_FOOD_COUNT = 80;
+const MAX_TOTAL_FOODS = 400;
+const INITIAL_FOOD_COUNT = 180;
 const NUM_OF_BOTS = 5;
 const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
 const UPSCALE_LENGTH_LV1 = 150;
 const UPSCALE_LENGTH_LV2 = 300;
+
+// Snake Spawn
+const MIN_SPAWN_DISTANCE_FROM_BORDER = 350; // Minimum distance from border
+
 let lastFoodSpawn = 0; // Track the last food spawn time
 
 const basicFoodColors = [
@@ -85,6 +89,20 @@ const botColors = [
   "#FFFFE0", // LightYellow
 ];
 
+// Parameter Tuning Object (at the top level of your code)
+const snakeTuning = {
+  turningSpeed: 0.15,
+  turningSpeedMultiplier: 1, // 5
+  directionSmoothing: 0.2,
+  minSegmentDistance: 2, // Multiplier for this.size
+  maxSegmentDistance: 2.8, // Multiplier for this.size Original: 2.5
+  smoothingStrength: 0.25,
+  damping: 0.8,
+  turnTighteningFactor: 0.3,
+  maxBendAngle: 45,
+  segmentSpacing: 2.5, // Original 2.2
+};
+
 class Snake {
   static isNameTaken(name, allSnakes) {
     // Static method, takes allSnakes as argument
@@ -99,18 +117,25 @@ class Snake {
     this.name = name;
 
     // Constants (tune these as needed)
-    this.SAFE_SPAWN_DISTANCE = 70;
+    this.SAFE_SPAWN_DISTANCE = 80;
     this.RESPAWN_TIME = 180;
     this.MIN_SEGMENT_SIZE = 1.5;
     this.BASE_LENGTH = 50; // Initial length (segments)
-    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 6.6); // Maximum length (segments)
+    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 7.5); // Maximum length (segments)
     this.GROWTH_RATE = 0.02; // Segments gained per food eaten
     this.SPEED_BOOST_COST = 2; // Segments lost per second of speed boost
     this.BASE_SPEED = 160;
     this.SPEED_BOOST = 1.5;
 
-    // Variables (updated during game)
-    this.reset(x, y);
+    this.x = x; // Initialize x and y *FIRST*
+    this.y = y;
+
+    this.segments = []; // Initialize segments *AFTER* x and y are set
+
+    if (isBot) {
+      this.reset(x, y);
+    }
+
     this.size = 6;
     this.lives = 3; // Each snake starts with 3 lives
     this.isAlive = true;
@@ -134,19 +159,25 @@ class Snake {
 
     // Speed effects
     this.trail = []; // Array to store the trail segments
-    this.trailMaxLength = 25; // Adjust trail length
 
-    this.turningSpeed = 0.45; // Increased turning speed for sharper turns
     this.targetDirection = { ...this.direction };
 
     // Dynamic movement parameters
-    this.segmentSmoothing = 0.15; // Balanced responsiveness
-    this.maxBendAngle = 55; // Increased maximum bend angle
-    this.segmentSpacing = 2.2; // Tighter base spacing
-    this.turnTighteningFactor = 0.3; // How much segments tighten during turns
+    this.turningSpeed = snakeTuning.turningSpeed;
+    this.turningSpeedMultiplier = snakeTuning.turningSpeedMultiplier;
+    this.directionSmoothing = snakeTuning.directionSmoothing;
+    this.minSegmentDistance = snakeTuning.minSegmentDistance;
+    this.maxSegmentDistance = snakeTuning.maxSegmentDistance;
+    this.smoothingStrength = snakeTuning.smoothingStrength;
+    this.damping = snakeTuning.damping;
+    this.turnTighteningFactor = snakeTuning.turnTighteningFactor;
+    this.maxBendAngle = snakeTuning.maxBendAngle;
+    this.segmentSpacing = snakeTuning.segmentSpacing;
   }
 
   reset(x, y) {
+    this.x = x; // Now, these assignments are correct
+    this.y = y;
     this.segments = [];
     // Create head
     this.segments.push({ x, y });
@@ -157,7 +188,16 @@ class Snake {
     //     y: y,
     //   });
     // }
-    this.direction = { x: 1, y: 0 };
+
+    // Generate random direction vector
+    const angle = Math.random() * 2 * Math.PI; // Random angle in radians
+    this.direction = {
+      x: Math.cos(angle),
+      y: Math.sin(angle),
+    };
+
+    // Initially target the same direction
+    this.targetDirection = { ...this.direction }; // Copy the direction
     this.isAlive = true;
     this.opacity = 1;
     this.isDying = false;
@@ -287,11 +327,10 @@ class Snake {
       Math.PI;
 
     // Use lerpAngle to interpolate between angles
-    const turningSpeedMultiplier = 5; // Add this multiplier
     const newAngle = lerpAngle(
       currentAngle,
       targetAngle,
-      this.turningSpeed * deltaTime * turningSpeedMultiplier
+      this.turningSpeed * deltaTime * this.turningSpeedMultiplier
     );
 
     // Convert the new angle back to a direction vector
@@ -312,7 +351,7 @@ class Snake {
 
     // Add direction smoothing
     if (this.targetDirection) {
-      const directionSmoothing = 0.15; // Reduced for smoother turns
+      const smoothingFactor = this.directionSmoothing;
       const currentAngle = Math.atan2(this.direction.y, this.direction.x);
       const targetAngle = Math.atan2(
         this.targetDirection.y,
@@ -325,7 +364,7 @@ class Snake {
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
       // Apply smooth rotation
-      const newAngle = currentAngle + angleDiff * directionSmoothing;
+      const newAngle = currentAngle + angleDiff * smoothingFactor;
 
       // Update direction with smoothed angle
       this.direction.x = Math.cos(newAngle);
@@ -333,6 +372,7 @@ class Snake {
     }
 
     const head = this.segments[0];
+
     const moveAmount = this.speed * deltaTime;
 
     const newHead = {
@@ -346,10 +386,6 @@ class Snake {
 
     if (this.isSpeedingUp) {
       this.trail.push({ x: newHead.x, y: newHead.y }); // Use the *new* head position
-
-      if (this.trail.length > this.trailMaxLength) {
-        this.trail.shift();
-      }
     } else {
       this.trail = [];
     }
@@ -384,9 +420,9 @@ class Snake {
 
   applySegmentSmoothing(deltaTime) {
     // Tighter following parameters
-    const MIN_SEGMENT_DISTANCE = this.size * 2; // Minimum distance between segments
-    const MAX_SEGMENT_DISTANCE = this.size * 2.5; // Maximum allowed distance
-    const SMOOTHING_STRENGTH = 0.25; // Increased for more responsive following
+    const MIN_SEGMENT_DISTANCE = this.size * this.minSegmentDistance; // Minimum distance between segments
+    const MAX_SEGMENT_DISTANCE = this.size * this.maxSegmentDistance; // Maximum allowed distance
+    const SMOOTHING_STRENGTH = this.smoothingStrength; // Increased for more responsive following
 
     for (let i = 1; i < this.segments.length; i++) {
       const prevSegment = this.segments[i - 1];
@@ -433,7 +469,7 @@ class Snake {
       currentSegment.vy += (targetY - currentSegment.y) * correctionStrength;
 
       // Apply damping to prevent oscillation
-      const DAMPING = 0.8;
+      const DAMPING = this.damping;
       currentSegment.vx *= DAMPING;
       currentSegment.vy *= DAMPING;
 
@@ -599,81 +635,108 @@ class Snake {
 
   respawn() {
     if (this.lives > 0) {
-      let safePosition = this.findSafeSpawnPosition();
+      const safePosition = this.findSafeSpawnPosition();
       this.reset(safePosition.x, safePosition.y);
       this.targetPoint = null;
     }
   }
 
   findSafeSpawnPosition() {
-    let attempts = 0;
-    let position;
+    const MAX_RESPAWN_ATTEMPTS = 20;
+    const SAFE_SPAWN_DISTANCE_SQUARED =
+      this.SAFE_SPAWN_DISTANCE * this.SAFE_SPAWN_DISTANCE;
 
-    do {
-      position = {
-        x: Math.random() * (WORLD_WIDTH - 100) + 50,
-        y: Math.random() * (WORLD_HEIGHT - 100) + 50,
-      };
-      attempts++;
-    } while (this.isPositionNearSnakes(position) && attempts < 10);
+    for (let attempts = 0; attempts < MAX_RESPAWN_ATTEMPTS; attempts++) {
+      let x =
+        Math.floor(
+          Math.random() * (WORLD_WIDTH - 2 * MIN_SPAWN_DISTANCE_FROM_BORDER)
+        ) + MIN_SPAWN_DISTANCE_FROM_BORDER;
+      let y =
+        Math.floor(
+          Math.random() * (WORLD_HEIGHT - 2 * MIN_SPAWN_DISTANCE_FROM_BORDER)
+        ) + MIN_SPAWN_DISTANCE_FROM_BORDER;
 
-    return position;
+      if (!this.isPositionNearSnakes(x, y, SAFE_SPAWN_DISTANCE_SQUARED)) {
+        return { x, y };
+      }
+    }
+
+    return { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 }; // Default to center
   }
 
-  isPositionNearSnakes(position) {
-    return allSnakes.some((snake) => {
-      if (snake === this || !snake.isAlive || snake.isDying) return false;
-      const distance = this.getDistance(position, snake.segments[0]);
-      return distance < this.SAFE_SPAWN_DISTANCE;
-    });
+  isPositionNearSnakes(x, y, SAFE_SPAWN_DISTANCE_SQUARED) {
+    if (allSnakes.length === 0) {
+      // Important check!
+      return false;
+    }
+
+    for (const snake of allSnakes) {
+      if (snake === this || !snake.isAlive || snake.isDying) continue;
+
+      const dx = x - snake.segments[0].x;
+      const dy = y - snake.segments[0].y;
+      const distanceSquared = dx * dx + dy * dy;
+
+      if (distanceSquared < SAFE_SPAWN_DISTANCE_SQUARED) {
+        return true;
+      }
+    }
+    return false;
   }
 
   draw() {
     if (!this.isAlive && !this.isDying) return;
 
     const scale = 1.6;
+    let trailScale = 1; // Initialize trail scale
+
+    // Determine trail scale based on snake length
+    if (this.segments.length > UPSCALE_LENGTH_LV2) {
+      trailScale = 2.4 / scale; // Scale up to match level 2
+    } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
+      trailScale = 2.0 / scale; // Scale up to match level 1
+    }
+
     ctx.globalAlpha = this.opacity;
 
     if (this.isSpeedingUp) {
       for (let i = 0; i < this.segments.length; i++) {
+        // Iterate through the trail array
         const segment = this.segments[i];
         const screenX = segment.x - camera.x;
         const screenY = segment.y - camera.y;
 
-        // Only draw if within viewport
         if (
           screenX >= -10 &&
           screenX <= VIEWPORT_WIDTH + 10 &&
           screenY >= -10 &&
           screenY <= VIEWPORT_HEIGHT + 10
         ) {
-          // Gradient effect from head to tail
-          const gradientFactor = 1 - i / this.segments.length;
+          const alpha = ((i + 1) / this.trail.length) * 0.7; // Increased alpha for more visibility
 
-          // Subtle glow
-          const glowAlpha = 0.3 * gradientFactor;
-          ctx.fillStyle = `rgba(255, 190, 0, ${glowAlpha})`;
+          // Subtle Glow (drawn first) - More prominent glow
+          const glowAlpha = alpha * 0.5; // Increased glow alpha
+          ctx.fillStyle = `rgba(255, 215, 0, ${glowAlpha})`; // Brighter yellow-gold
+          ctx.shadowColor = "yellow"; // Yellow shadow
+          ctx.shadowBlur = 10 * trailScale; // Larger, scaled blur
           ctx.beginPath();
-          ctx.arc(
-            screenX,
-            screenY,
-            this.size * 1.4 * scale * (1 - i / this.segments.length / 3),
-            0,
-            Math.PI * 2
-          );
+          const glowRadius =
+            Math.max(0, this.size * (1.6 - i / this.trail.length / 3)) *
+            scale *
+            trailScale; // Larger glow radius
+          ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
           ctx.fill();
+          ctx.shadowColor = "transparent"; // Reset shadow
+          ctx.shadowBlur = 0;
 
-          // Main trail
-          const trailAlpha = 0.5 * gradientFactor;
-          ctx.fillStyle = `rgba(255, 153, 0, ${trailAlpha})`;
+          // Trail - More intense trail
+          ctx.fillStyle = `rgba(255, 170, 0, ${alpha})`; // More intense orange
           ctx.beginPath();
-          ctx.arc(
-            screenX,
-            screenY,
-            this.size * 1.2 * scale * (1 - i / this.segments.length / 3),
-            0,
-            Math.PI * 2
-          );
+          const trailRadius =
+            Math.max(0, this.size * (1.4 - i / this.trail.length / 3)) *
+            scale *
+            trailScale; // Larger trail radius
+          ctx.arc(screenX, screenY, trailRadius, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -709,10 +772,6 @@ class Snake {
         ctx.beginPath();
         ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
         ctx.fill();
-        // Add border with contrasting color
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
       }
     }
 
@@ -727,9 +786,12 @@ class Snake {
       screenHeadY >= -10 &&
       screenHeadY <= VIEWPORT_HEIGHT + 10
     ) {
+      const eyeScale = this.updatedScale / scale; // Use updatedScale for eye scaling
+      const irisScale = this.updatedScale / scale; // Use updatedScale for iris scaling
+
       ctx.fillStyle = "white";
-      const eyeOffset = 2 * scale;
-      const eyeSize = 1.5 * scale;
+      const eyeOffset = 2 * scale * eyeScale; // Scale eye offset
+      const eyeSize = 1.5 * scale * eyeScale; // Scale eye size
 
       const eyeX = this.direction.x * eyeOffset;
       const eyeY = this.direction.y * eyeOffset;
@@ -752,8 +814,8 @@ class Snake {
       ctx.fill();
 
       // *** Iris Tracking (Simpler - Based on targetDirection) - Corrected ***
-      const irisOffset = 1; // Reduced offset to keep irises inside
-      const irisSize = eyeSize * 0.8;
+      const irisOffset = 0.9 * irisScale; // Scale iris offset
+      const irisSize = eyeSize * 0.8; // Iris size relative to eye size (important!)
 
       // Calculate iris positions *relative to the eye centers*
       const irisXLeft = this.targetDirection.x * irisOffset;
@@ -943,11 +1005,39 @@ class Food {
       screenY <= VIEWPORT_HEIGHT + 10
     ) {
       if (!this.isFlying) {
-        // *** KEY CHANGE: Draw glow only if NOT flying ***
-        ctx.fillStyle = this.shadowColor;
+        // "Light Bulb" Glow Effect
+
+        // 1. Very Bright, Smaller Inner Glow
+        ctx.shadowColor = "white"; // Pure white for the "bulb"
+        ctx.shadowBlur = 32; // Strong blur
+        ctx.fillStyle = "white"; // White center
+        ctx.globalAlpha = 0.8; // Almost opaque
         ctx.beginPath();
-        ctx.arc(screenX, screenY, this.size * 1.1, 0, Math.PI * 2);
+        ctx.arc(screenX, screenY, this.size * 0.8, 0, Math.PI * 2); // Smaller "bulb"
         ctx.fill();
+        ctx.globalAlpha = 1; // Reset alpha
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+
+        // 2. Outer Glow (Colored)
+        ctx.shadowColor = this.shadowColor; // Food's shadow color
+        ctx.shadowBlur = 64; // Very large blur
+        ctx.globalAlpha = 0.5; // Semi-transparent
+        ctx.fillStyle = this.color; // Food's color
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, this.size * 1.2, 0, Math.PI * 2); // Larger glow
+        ctx.fill();
+        ctx.globalAlpha = 1; // Reset alpha
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+
+        // 3. Food Item (Slightly Darker) - Optional
+        ctx.fillStyle = this.color; // Food color
+        ctx.globalAlpha = 0.9; // Slightly less opaque
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2); // Original size
+        ctx.fill();
+        ctx.globalAlpha = 1; // Reset alpha
       }
 
       ctx.fillStyle = this.color;
@@ -1019,28 +1109,6 @@ const camera = {
   },
 };
 
-const player = new Snake(
-  canvas.width / 2,
-  canvas.height / 2,
-  "#4444ff",
-  false,
-  "Player"
-);
-const bots = []; //Initialize an empty array first
-
-const allSnakes = [player];
-
-for (let i = 0; i < NUM_OF_BOTS; i++) {
-  const newBot = createBot(
-    Math.random() * canvas.width,
-    Math.random() * canvas.height,
-    getRandomBotColor(),
-    allSnakes
-  );
-  bots.push(newBot);
-  allSnakes.push(newBot); // Add the new bot to allSnakes *immediately*
-}
-
 function createBot(x, y, color, allSnakes) {
   //allSnakes parameter is added
   let newName;
@@ -1053,6 +1121,35 @@ function createBot(x, y, color, allSnakes) {
   const spawnY = Math.random() * WORLD_HEIGHT;
 
   return new Snake(spawnX, spawnY, color, true, newName);
+}
+
+// Inialize values, arrays and starting the game
+
+const bots = []; //Initialize an empty array first
+
+const allSnakes = [];
+
+const player = new Snake(
+  canvas.width / 2,
+  canvas.height / 2,
+  "#4444ff",
+  false,
+  "Player"
+);
+allSnakes.push(player);
+
+const safePosition = player.findSafeSpawnPosition(); // Find safe position *after* adding to allSnakes
+player.reset(safePosition.x, safePosition.y);
+
+for (let i = 0; i < NUM_OF_BOTS; i++) {
+  const newBot = createBot(
+    Math.random() * canvas.width,
+    Math.random() * canvas.height,
+    getRandomBotColor(),
+    allSnakes
+  );
+  bots.push(newBot);
+  allSnakes.push(newBot); // Add the new bot to allSnakes *immediately*
 }
 
 const foods = Array(INITIAL_FOOD_COUNT)
@@ -1310,30 +1407,51 @@ function getRandomColor() {
 function updateStats() {
   statsDiv.innerHTML = allSnakes
     .map((snake) => {
-      const statusClass = snake.isAlive && !snake.isDying ? "alive" : "dead";
-      let status = "Dead";
-      if (snake.isAlive) status = "Active";
-      else if (snake.isDying) status = "Dying...";
-      else if (snake.lives > 0) status = "Respawning...";
+      let statusIndicator = ""; // Initialize status indicator
+
+      if (snake.isAlive && !snake.isDying) {
+        statusIndicator = '<span class="active-indicator"></span>'; // Green circle
+      } else if (snake.lives > 0) {
+        statusIndicator = '<span class="respawning-indicator">|</span>'; // Spinning |
+      }
 
       return `
-          <div class="player-stats ${statusClass}">
-            <strong>${snake.name}</strong>: 
-            ${snake.lives} ${snake.lives === 1 ? "life" : "lives"} | 
-            Length: ${snake.segments.length}/${snake.getCurrentMaxLength()} |
-            Status: ${status}
-          </div>
-        `;
+                <div class="player-stats">
+                    <strong>${snake.name}</strong>: 
+                    ${snake.lives} ${snake.lives === 1 ? "life" : "lives"} | 
+                    ${snake.segments.length}/${snake.getCurrentMaxLength()} |
+                    ${statusIndicator} 
+                </div>
+            `;
     })
     .join("");
 
-  // Position stats div inside the canvas:
+  const respawningIndicators = document.querySelectorAll(
+    ".respawning-indicator"
+  );
+
+  respawningIndicators.forEach((indicator) => {
+    let rotation = 0;
+    const animationInterval = setInterval(() => {
+      rotation += 5; // Adjust rotation speed
+      indicator.style.transform = `rotate(${rotation}deg)`;
+
+      if (rotation >= 360) {
+        rotation = 0; // Reset rotation
+      }
+    }, 20); // Adjust interval for smoothness
+  });
+
+  // Position stats div *inside* the canvas:
   statsDiv.style.position = "absolute";
-  statsDiv.style.top = "10px"; // Adjust as needed
-  statsDiv.style.left = "10px"; // Adjust as needed
-  statsDiv.style.backgroundColor = "rgba(255, 255, 255, 0.7)"; // Transparent background
-  statsDiv.style.fontSize = "14px"; // Smaller font
-  statsDiv.style.padding = "5px"; // Smaller padding
+  statsDiv.style.top = "56px"; // Adjust as needed
+  statsDiv.style.left = "1040px"; // Adjust as needed
+  statsDiv.style.color = "white"; // White text
+  statsDiv.style.fontSize = "12px";
+  statsDiv.style.fontFamily = "sans-serif"; // Use a standard font
+  statsDiv.style.pointerEvents = "none"; // Allow clicks to pass through
+  statsDiv.style.zIndex = "100";
+  statsDiv.style.opacity = "10";
 }
 
 function drawRadar() {
@@ -1377,6 +1495,8 @@ function drawRadar() {
 }
 
 function update(deltaTime) {
+  updateStats();
+
   const allSnakesCopy = [...allSnakes]; // Create a copy to avoid concurrent modification issues.
 
   // Update camera position based on player position
@@ -1436,7 +1556,6 @@ function update(deltaTime) {
   });
 
   checkCollisions();
-  updateStats();
 }
 
 let lastTime = performance.now();
