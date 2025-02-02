@@ -11,12 +11,13 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 650;
-const INITIAL_FOOD_COUNT = 320;
-const NUM_OF_BOTS = 5;
+const MAX_TOTAL_FOODS = 700;
+const INITIAL_FOOD_COUNT = 360;
+const NUM_OF_BOTS = 8;
 const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
-const UPSCALE_LENGTH_LV1 = 150;
-const UPSCALE_LENGTH_LV2 = 300;
+const UPSCALE_LENGTH_LV1 = 120;
+const UPSCALE_LENGTH_LV2 = 240;
+const UPSCALE_LENGTH_LV3 = 360;
 
 // Snake Spawn
 const MIN_SPAWN_DISTANCE_FROM_BORDER = 350; // Minimum distance from border
@@ -39,26 +40,46 @@ const basicFoodColors = [
 ];
 
 const botNames = [
-  "Slitherin",
+  "Slither",
+  "Coil",
+  "Wiggle",
+  "Zigzag",
+  "Slink",
+  "Curve",
+  "Loop",
+  "Spiral",
+  "Twist",
+  "Turn",
+  "Wind",
+  "Weave",
+  "Dart",
+  "Dash",
+  "Streak",
+  "Flash",
+  "Glide",
+  "Sweep",
+  "Dive",
+  "Soar",
+  "Creep",
+  "Crawl",
+  "Skulk",
+  "Prowl",
+  "Lurk",
+  "Sneak",
+  "Slide",
+  "Slip",
+  "Shimmy",
+  "Wobble",
+  "Undulate",
+  "Meander",
+  "Serpent",
   "Viper",
-  "Cobra",
   "Python",
-  "Anaconda",
+  "Cobra",
   "Mamba",
   "Asp",
-  "Rattler",
-  "Boa",
-  "Serpent",
-  "Sidewinder",
-  "Boomslang",
-  "Racer",
-  "Kingsnake",
-  "Coral",
-  "Cottonmouth",
-  "Copperhead",
-  "Harlequin",
-  "Gaboon",
-  "Moccasin",
+  "Krait",
+  "Taipan",
 ];
 
 const botColors = [
@@ -93,7 +114,7 @@ const botColors = [
 const snakeTuning = {
   turningSpeed: 0.15,
   turningSpeedMultiplier: 1, // 5
-  directionSmoothing: 0.2,
+  directionSmoothing: 0.1, // 0.2
   minSegmentDistance: 2, // Multiplier for this.size
   maxSegmentDistance: 2.6, // Multiplier for this.size Original: 2.5
   smoothingStrength: 0.25,
@@ -120,9 +141,9 @@ class Snake {
     this.SAFE_SPAWN_DISTANCE = 80;
     this.RESPAWN_TIME = 180;
     this.MIN_SEGMENT_SIZE = 1.5;
-    this.BASE_LENGTH = 50; // Initial length (segments)
-    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 9); // Maximum length (segments)
-    this.GROWTH_RATE = 0.02; // Segments gained per food eaten
+    this.BASE_LENGTH = 30; // Initial length (segments)
+    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 12); // Maximum length (segments)
+    this.GROWTH_RATE = 0.01; // Segments gained per food eaten
     this.SPEED_BOOST_COST = 2; // Segments lost per second of speed boost
     this.BASE_SPEED = 160;
     this.SPEED_BOOST = 1.5;
@@ -137,7 +158,7 @@ class Snake {
     }
 
     this.size = 6;
-    this.lives = 3; // Each snake starts with 3 lives
+    this.lives = 2; // Each snake starts with 2 lives
     this.isAlive = true;
     this.respawnTimer = 0;
     this.targetPoint = null;
@@ -145,6 +166,8 @@ class Snake {
     this.isDying = false;
     this.deathProgress = 0;
     this.foodEaten = 0;
+    this.MAX_FOOD_EATEN_FOR_SEGMENT = 30; // Your maximum food eaten threshold
+    this.growthProgress = 0; // Initialize growth progress
 
     this.baseSpeed = this.BASE_SPEED;
     this.speed = this.baseSpeed;
@@ -214,22 +237,29 @@ class Snake {
   }
 
   grow(foodValue) {
-    const BASE_GROWTH_RATE = 0.1;
+    const currentLength = this.segments.length;
 
-    // Accumulate food more slowly as snake gets longer
-    const growthModifier = 1 / Math.sqrt(this.segments.length);
+    let requiredFood = 1 + currentLength / 11; // Adjust 20 for tuning
+    requiredFood = Math.min(requiredFood, this.MAX_FOOD_EATEN_FOR_SEGMENT);
 
-    const scaledGrowth = foodValue * BASE_GROWTH_RATE * growthModifier;
+    const effectiveFoodValue = foodValue / requiredFood;
 
-    this.foodEaten += scaledGrowth;
+    this.growthProgress += effectiveFoodValue;
 
-    const newSegment = { ...this.segments[this.segments.length - 1] };
-    this.segments.push(newSegment);
+    if (this.growthProgress >= 1) {
+      this.growthProgress -= 1;
+      this.segments.push({ ...this.segments[this.segments.length - 1] });
+    }
+
+    // Update foodEaten: Increment, don't recalculate
+    this.foodEaten += effectiveFoodValue;
   }
 
   update(foods, otherSnakes, deltaTime) {
     this.updatedScale = (() => {
-      if (this.segments.length > UPSCALE_LENGTH_LV2) {
+      if (this.segments.length > UPSCALE_LENGTH_LV3) {
+        return 2.8;
+      } else if (this.segments.length > UPSCALE_LENGTH_LV2) {
         return 2.4;
       } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
         return 2.0;
@@ -691,7 +721,9 @@ class Snake {
     let trailScale = 1; // Initialize trail scale
 
     // Determine trail scale based on snake length
-    if (this.segments.length > UPSCALE_LENGTH_LV2) {
+    if (this.segments.length > UPSCALE_LENGTH_LV3) {
+      trailScale = 2.8 / scale; // Scale up to match level 3
+    } else if (this.segments.length > UPSCALE_LENGTH_LV2) {
       trailScale = 2.4 / scale; // Scale up to match level 2
     } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
       trailScale = 2.0 / scale; // Scale up to match level 1
@@ -880,7 +912,6 @@ class Food {
       this.isFlickering = false; // Add a flag to track flickering state
       this.fleeingBlinkInterval = 300; // Fleeing blink interval (faster)
       this.fleeingLastBlink = 0;
-      this.isFleeingFlickering = false; // Add a flag to track fleeing flickering state
 
       this.setRandomDirection();
       this.baseSpeed = 1; // Store base speed
@@ -1040,42 +1071,62 @@ class Food {
         ctx.globalAlpha = 1; // Reset alpha
       }
 
-      ctx.fillStyle = this.color;
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2);
-      ctx.fill();
-
       if (this.isFlying) {
-        let currentBlinkInterval = this.blinkInterval;
-        let isCurrentlyFlickering = this.isFleeingFlickering
-          ? this.isFleeingFlickering
-          : this.isFlickering;
-        let lastBlinkTime = this.fleeingLastBlink || this.lastBlink;
-        let shadowSizeMultiplier = this.fleeing ? 1.4 : 1.2;
+        const currentBlinkInterval = this.fleeing
+          ? this.fleeingBlinkInterval
+          : this.blinkInterval;
+        const lastBlinkTime = this.fleeingLastBlink || this.lastBlink;
+
+        const glowSizeMultiplier = this.fleeing ? 6.0 : 5.0;
+        const foodSize = this.size * 1.1; // Slightly larger food
 
         const currentTime = Date.now();
         if (currentTime - lastBlinkTime >= currentBlinkInterval) {
           if (this.fleeing) {
-            this.isFleeingFlickering = !this.isFleeingFlickering;
             this.fleeingLastBlink = currentTime;
           } else {
-            this.isFlickering = !this.isFlickering;
             this.lastBlink = currentTime;
           }
         }
 
-        if (isCurrentlyFlickering) {
-          ctx.fillStyle = this.shadowColor;
-          ctx.beginPath();
-          ctx.arc(
-            screenX,
-            screenY,
-            this.size * shadowSizeMultiplier,
-            0,
-            Math.PI * 2
-          );
-          ctx.fill();
-        }
+        // 1. Brightest White Core (Light Source)
+        ctx.fillStyle = "white"; // Pure white for the "light source"
+        ctx.globalAlpha = 0.95; // Almost completely opaque
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, foodSize * 0.3, 0, Math.PI * 2); // Tiny, bright core
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // 2. Inner Glow (Food Color)
+        ctx.shadowColor = this.shadowColor;
+        ctx.shadowBlur = foodSize * glowSizeMultiplier * 0.8; // Large blur
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = 0.7; // Semi-transparent
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, foodSize * 0.6, 0, Math.PI * 2); // Slightly larger radius
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+
+        // 3. Outer Glow (Food Color, Larger)
+        ctx.shadowColor = this.shadowColor;
+        ctx.shadowBlur = foodSize * glowSizeMultiplier * 1.2; // Even larger blur
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = 0.5; // More transparent
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, foodSize * 0.9, 0, Math.PI * 2); // Almost food size
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, foodSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
     }
   }
@@ -1159,7 +1210,7 @@ const foods = Array(INITIAL_FOOD_COUNT)
 const flyingFoodInterval = 9000;
 
 setInterval(() => {
-  const isFlying = Math.random() < 0.2; // 20% chance of flying food (adjust if needed)
+  const isFlying = Math.random() < 0.4; // 20% chance of flying food (adjust if needed)
   if (isFlying) {
     foods.push(new Food(true)); // Create a flying food
   }
@@ -1391,8 +1442,6 @@ function handleSnakeDeath(snake) {
       allSnakes.push(newBot);
       bots.push(newBot);
     }
-  } else {
-    console.log(`${snake.name} lost a life! Remaining lives: ${snake.lives}`);
   }
 }
 
