@@ -110,18 +110,24 @@ const botColors = [
   "#FFFFE0", // LightYellow
 ];
 
+// Snake color config
+const SNAKE_CONFIG = {
+  USE_DUAL_COLORS: true, // Master toggle for dual color feature
+  PLAYER_DUAL_COLOR_CHANCE: 1.0, // Chance for player snake to have dual colors (0.0 to 1.0)
+  BOT_DUAL_COLOR_CHANCE: 0.5, // Chance for bot snakes to have dual colors (0.0 to 1.0)
+};
+
 // Parameter Tuning Object (at the top level of your code)
 const snakeTuning = {
   turningSpeed: 0.15,
   turningSpeedMultiplier: 1, // 5
   directionSmoothing: 0.1, // 0.2
-  minSegmentDistance: 2, // Multiplier for this.size
-  maxSegmentDistance: 2.6, // Multiplier for this.size Original: 2.5
-  smoothingStrength: 0.25,
+  minSegmentDistance: 2, // Multiplier for this.size Original 2
+  maxSegmentDistance: 2.2, // Multiplier for this.size Original: 2.5
+  smoothingStrength: 0.1, // Original 0.25
   damping: 0.8,
   turnTighteningFactor: 0.3,
   maxBendAngle: 45,
-  segmentSpacing: 2.3, // Original 2.2
 };
 
 class Snake {
@@ -136,6 +142,13 @@ class Snake {
     this.color = color;
     this.isBot = isBot;
     this.name = name;
+
+    // Determine if this snake should use dual colors
+    this.useDualColors =
+      SNAKE_CONFIG.USE_DUAL_COLORS && this.shouldUseDualColors();
+    this.secondaryColor = this.useDualColors
+      ? this.generateSecondaryColor(color)
+      : color;
 
     // Constants (tune these as needed)
     this.SAFE_SPAWN_DISTANCE = 80;
@@ -195,7 +208,6 @@ class Snake {
     this.damping = snakeTuning.damping;
     this.turnTighteningFactor = snakeTuning.turnTighteningFactor;
     this.maxBendAngle = snakeTuning.maxBendAngle;
-    this.segmentSpacing = snakeTuning.segmentSpacing;
   }
 
   reset(x, y) {
@@ -225,6 +237,13 @@ class Snake {
     this.opacity = 1;
     this.isDying = false;
     this.deathProgress = 0;
+  }
+
+  shouldUseDualColors() {
+    const chance = this.isBot
+      ? SNAKE_CONFIG.BOT_DUAL_COLOR_CHANCE
+      : SNAKE_CONFIG.PLAYER_DUAL_COLOR_CHANCE;
+    return Math.random() < chance;
   }
 
   getCurrentMaxLength() {
@@ -714,6 +733,35 @@ class Snake {
     return false;
   }
 
+  // Generate a complementary color
+  generateSecondaryColor(primaryColor) {
+    if (Math.random() < 0.5) {
+      let r, g, b;
+      if (primaryColor.startsWith("#")) {
+        const hex = primaryColor.substring(1);
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      } else if (primaryColor.startsWith("rgb")) {
+        const rgb = primaryColor.match(/\d+/g);
+        [r, g, b] = rgb.map(Number);
+      } else {
+        return getRandomBotColor(); // Use your existing random color function
+      }
+
+      // Generate complementary color
+      const newR = 255 - r;
+      const newG = 255 - g;
+      const newB = 255 - b;
+
+      return `rgb(${newR}, ${newG}, ${newB})`;
+    }
+    // Option 2: Generate completely random secondary color
+    else {
+      return getRandomBotColor();
+    }
+  }
+
   draw() {
     if (!this.isAlive && !this.isDying) return;
 
@@ -800,6 +848,12 @@ class Snake {
           const turnFactor = Math.max(0.3, dot);
           size *= turnFactor;
         }
+
+        // Determine segment color based on dual color settings
+        ctx.fillStyle =
+          this.useDualColors && Math.floor(i / 10) % 2 === 0
+            ? this.secondaryColor
+            : this.color;
 
         ctx.beginPath();
         ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
@@ -1161,13 +1215,11 @@ const camera = {
 };
 
 function createBot(x, y, color, allSnakes) {
-  //allSnakes parameter is added
   let newName;
   do {
     newName = botNames[Math.floor(Math.random() * botNames.length)];
   } while (Snake.isNameTaken(newName, allSnakes));
 
-  // Use WORLD_WIDTH and WORLD_HEIGHT instead of canvas dimensions
   const spawnX = Math.random() * WORLD_WIDTH;
   const spawnY = Math.random() * WORLD_HEIGHT;
 
