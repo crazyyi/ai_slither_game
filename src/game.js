@@ -11,10 +11,10 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 1000;
+const MAX_TOTAL_FOODS = 1200;
 const INITIAL_FOOD_COUNT = 360;
 const NUM_OF_BOTS = 7;
-const FOOD_SPAWN_DELAY = 1100; // Initial spawn delay (milliseconds)
+const FOOD_SPAWN_DELAY = 500; // Initial spawn delay (milliseconds)
 const UPSCALE_LENGTHS = [80, 160, 240, 320, 400];
 
 // Snake Spawn
@@ -568,6 +568,7 @@ class Snake {
 
   calculateAvoidanceForce(head, otherSnakes) {
     let avoidanceForce = { x: 0, y: 0 };
+    const CLOSE_PROXIMITY_DISTANCE = this.size * 3; // Or adjust as needed
 
     otherSnakes.forEach((otherSnake) => {
       if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
@@ -576,11 +577,10 @@ class Snake {
         const dy = otherHead.y - head.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        const DANGER_DISTANCE = this.size * 3;
-
-        if (distance < DANGER_DISTANCE) {
+        // Only calculate avoidance if close proximity
+        if (distance < CLOSE_PROXIMITY_DISTANCE) {
           const repulsionForce =
-            (1 - distance / DANGER_DISTANCE) * Snake.AVOIDANCE_WEIGHT;
+            (1 - distance / CLOSE_PROXIMITY_DISTANCE) * Snake.AVOIDANCE_WEIGHT;
           avoidanceForce.x -= (dx / distance) * repulsionForce;
           avoidanceForce.y -= (dy / distance) * repulsionForce;
         }
@@ -630,7 +630,6 @@ class Snake {
         const sizeRatio = otherSnake.segments.length / this.segments.length;
 
         if (sizeRatio > 1.2 && distance < Snake.SNAKE_TARGET_RANGE * 1.5) {
-          // Increased range for threats
           if (distance < minThreatDistance) {
             minThreatDistance = distance;
             nearestThreat = otherSnake;
@@ -656,32 +655,26 @@ class Snake {
       const dx = head.x - nearestThreat.segments[0].x;
       const dy = head.y - nearestThreat.segments[0].y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      moveX = dx / distance + avoidanceForce.x;
-      moveY = dy / distance + avoidanceForce.y;
+      moveX = dx / distance; // CORRECT: No avoidance force here
+      moveY = dy / distance; // CORRECT: No avoidance force here
     } else if (targetSnake && Math.random() < 0.7) {
       // Chase prey
-      moveX =
-        (targetSnake.segments[0].x - head.x) / minTargetDistance +
-        avoidanceForce.x;
-      moveY =
-        (targetSnake.segments[0].y - head.y) / minTargetDistance +
-        avoidanceForce.y;
+      moveX = (targetSnake.segments[0].x - head.x) / minTargetDistance; // CORRECT: No avoidance force here
+      moveY = (targetSnake.segments[0].y - head.y) / minTargetDistance; // CORRECT: No avoidance force here
     } else if (nearestFood) {
       // Move toward food
-      moveX =
-        (nearestFood.position.x - head.x) / minFoodDistance + avoidanceForce.x;
-      moveY =
-        (nearestFood.position.y - head.y) / minFoodDistance + avoidanceForce.y;
+      moveX = (nearestFood.position.x - head.x) / minFoodDistance; // CORRECT: No avoidance force here
+      moveY = (nearestFood.position.y - head.y) / minFoodDistance; // CORRECT: No avoidance force here
     } else {
       // Explore
       const time = Date.now() * 0.001;
-      moveX =
-        Math.cos(time * 0.5) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT) +
-        avoidanceForce.x * Snake.RANDOM_EXPLORATION_WEIGHT;
-      moveY =
-        Math.sin(time * 0.7) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT) +
-        avoidanceForce.y * Snake.RANDOM_EXPLORATION_WEIGHT;
+      moveX = Math.cos(time * 0.5) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT); // CORRECT: No avoidance force here
+      moveY = Math.sin(time * 0.7) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT); // CORRECT: No avoidance force here
     }
+
+    // Combine target direction with close-proximity avoidance
+    moveX += avoidanceForce.x;
+    moveY += avoidanceForce.y;
 
     // Normalize movement vector
     const length = Math.sqrt(moveX * moveX + moveY * moveY);
