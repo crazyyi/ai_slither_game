@@ -189,9 +189,7 @@ class Snake {
 
     this.baseSpeed = this.BASE_SPEED;
     this.speed = this.baseSpeed;
-    this.speedBoost = 1.5;
     this.isSpeedingUp = false;
-    this.speedBoostCost = 2; // Value cost per second of speed boost (equivalent to 2 food)
     this.lastSpeedBoostTime = 0; // Time of last speed boost cost
     this.lastLengthChangeTime = 0;
 
@@ -221,13 +219,6 @@ class Snake {
     this.segments = [];
     // Create head
     this.segments.push({ x, y });
-    // Create body segments with proper spacing
-    // for (let i = 1; i < this.BASE_LENGTH; i++) {
-    //   this.segments.push({
-    //     x: x - i * this.size * 2, // Multiply by size*2 for proper spacing
-    //     y: y,
-    //   });
-    // }
 
     // Generate random direction vector
     const angle = Math.random() * 2 * Math.PI; // Random angle in radians
