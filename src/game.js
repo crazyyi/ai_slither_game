@@ -11,13 +11,11 @@ const radarCanvas = document.getElementById("radarCanvas");
 const radarCtx = radarCanvas.getContext("2d");
 
 const CAUTIOUS_LEVEL = 0.7;
-const MAX_TOTAL_FOODS = 700;
+const MAX_TOTAL_FOODS = 1000;
 const INITIAL_FOOD_COUNT = 360;
-const NUM_OF_BOTS = 8;
-const FOOD_SPAWN_DELAY = 2000; // Initial spawn delay (milliseconds)
-const UPSCALE_LENGTH_LV1 = 120;
-const UPSCALE_LENGTH_LV2 = 240;
-const UPSCALE_LENGTH_LV3 = 360;
+const NUM_OF_BOTS = 7;
+const FOOD_SPAWN_DELAY = 1100; // Initial spawn delay (milliseconds)
+const UPSCALE_LENGTHS = [80, 160, 240, 320, 400];
 
 // Snake Spawn
 const MIN_SPAWN_DISTANCE_FROM_BORDER = 350; // Minimum distance from border
@@ -131,6 +129,13 @@ const snakeTuning = {
 };
 
 class Snake {
+  // Configuration constants (class properties)
+  static FOOD_DETECTION_RANGE = 200;
+  static SNAKE_TARGET_RANGE = 300;
+  static MIN_SNAKE_SIZE_TO_CHASE = 0.85;
+  static AVOIDANCE_WEIGHT = 2;
+  static RANDOM_EXPLORATION_WEIGHT = 0.2;
+
   static isNameTaken(name, allSnakes) {
     // Static method, takes allSnakes as argument
     return allSnakes.some(
@@ -155,7 +160,7 @@ class Snake {
     this.RESPAWN_TIME = 180;
     this.MIN_SEGMENT_SIZE = 1.5;
     this.BASE_LENGTH = 30; // Initial length (segments)
-    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 12); // Maximum length (segments)
+    this.MAX_LENGTH = Math.floor(this.BASE_LENGTH * 14); // Maximum length (segments)
     this.GROWTH_RATE = 0.01; // Segments gained per food eaten
     this.SPEED_BOOST_COST = 2; // Segments lost per second of speed boost
     this.BASE_SPEED = 160;
@@ -171,7 +176,7 @@ class Snake {
     }
 
     this.size = 6;
-    this.lives = 2; // Each snake starts with 2 lives
+    this.lives = 1; // Each snake starts with 2 lives
     this.isAlive = true;
     this.respawnTimer = 0;
     this.targetPoint = null;
@@ -276,15 +281,12 @@ class Snake {
 
   update(foods, otherSnakes, deltaTime) {
     this.updatedScale = (() => {
-      if (this.segments.length > UPSCALE_LENGTH_LV3) {
-        return 2.8;
-      } else if (this.segments.length > UPSCALE_LENGTH_LV2) {
-        return 2.4;
-      } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
-        return 2.0;
-      } else {
-        return 1.6;
+      for (let i = UPSCALE_LENGTHS.length - 1; i >= 0; i--) {
+        if (this.segments.length > UPSCALE_LENGTHS[i]) {
+          return 1.6 + i * 0.4; // Scale increment for each level
+        }
       }
+      return 1.6; // Base scale (below level 1)
     })();
 
     let targetLength = this.getCurrentMaxLength();
@@ -562,25 +564,20 @@ class Snake {
   updateAI(foods, otherSnakes) {
     const head = this.segments[0];
 
-    // Configuration constants
-    const DANGER_DISTANCE = 50; // Reduced from 80 for more aggressive play
-    const FOOD_DETECTION_RANGE = 200;
-    const SNAKE_TARGET_RANGE = 300; // Increased from 250 for more aggressive targeting
-    const MIN_SNAKE_SIZE_TO_CHASE = 0.85; // Target snakes up to 85% of our size
+    const avoidanceForce = this.calculateAvoidanceForce(head, otherSnakes);
+    const targetDirection = this.determineTargetDirection(
+      head,
+      foods,
+      otherSnakes,
+      avoidanceForce
+    );
 
-    // Current movement vector
-    let moveX = this.direction.x;
-    let moveY = this.direction.y;
+    this.applyMovement(targetDirection);
+  }
 
-    // Track potential targets and threats
-    let nearestFood = null;
-    let minFoodDistance = FOOD_DETECTION_RANGE;
-    let targetSnake = null;
-    let minTargetDistance = SNAKE_TARGET_RANGE;
-    let nearestThreat = null;
-    let minThreatDistance = DANGER_DISTANCE;
+  calculateAvoidanceForce(head, otherSnakes) {
+    let avoidanceForce = { x: 0, y: 0 };
 
-    // Analyze surroundings
     otherSnakes.forEach((otherSnake) => {
       if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
         const otherHead = otherSnake.segments[0];
@@ -588,34 +585,36 @@ class Snake {
         const dy = otherHead.y - head.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        // Size comparison for decision making
-        const sizeRatio = otherSnake.segments.length / this.segments.length;
+        const DANGER_DISTANCE = this.size * 3;
 
-        if (sizeRatio > 1.2 && distance < DANGER_DISTANCE * 1.5) {
-          // This is a significant threat - track it
-          if (distance < minThreatDistance) {
-            minThreatDistance = distance;
-            nearestThreat = otherSnake;
-          }
-        } else if (
-          sizeRatio < MIN_SNAKE_SIZE_TO_CHASE &&
-          distance < SNAKE_TARGET_RANGE
-        ) {
-          // This is potential prey - track it
-          if (distance < minTargetDistance) {
-            minTargetDistance = distance;
-            targetSnake = otherSnake;
-          }
-        }
-
-        // Always avoid immediate collisions with any snake
         if (distance < DANGER_DISTANCE) {
-          const repulsionForce = 1 - distance / DANGER_DISTANCE;
-          moveX -= (dx / distance) * repulsionForce * 2;
-          moveY -= (dy / distance) * repulsionForce * 2;
+          const repulsionForce =
+            (1 - distance / DANGER_DISTANCE) * Snake.AVOIDANCE_WEIGHT;
+          avoidanceForce.x -= (dx / distance) * repulsionForce;
+          avoidanceForce.y -= (dy / distance) * repulsionForce;
         }
       }
     });
+
+    const avoidanceMagnitude = Math.sqrt(
+      avoidanceForce.x * avoidanceForce.x + avoidanceForce.y * avoidanceForce.y
+    );
+    if (avoidanceMagnitude > 0) {
+      avoidanceForce.x /= avoidanceMagnitude;
+      avoidanceForce.y /= avoidanceMagnitude;
+    }
+
+    return avoidanceForce;
+  }
+
+  determineTargetDirection(head, foods, otherSnakes, avoidanceForce) {
+    // Track potential targets and threats
+    let nearestFood = null;
+    let minFoodDistance = Infinity;
+    let targetSnake = null;
+    let minTargetDistance = Infinity;
+    let nearestThreat = null;
+    let minThreatDistance = Infinity;
 
     // Find nearest food
     foods.forEach((food) => {
@@ -629,45 +628,87 @@ class Snake {
       }
     });
 
+    // Target snake and threat detection (Corrected)
+    otherSnakes.forEach((otherSnake) => {
+      if (otherSnake !== this && otherSnake.isAlive && !otherSnake.isDying) {
+        const otherHead = otherSnake.segments[0];
+        const dx = otherHead.x - head.x;
+        const dy = otherHead.y - head.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const sizeRatio = otherSnake.segments.length / this.segments.length;
+
+        if (sizeRatio > 1.2 && distance < Snake.SNAKE_TARGET_RANGE * 1.5) {
+          // Increased range for threats
+          if (distance < minThreatDistance) {
+            minThreatDistance = distance;
+            nearestThreat = otherSnake;
+          }
+        } else if (
+          sizeRatio < Snake.MIN_SNAKE_SIZE_TO_CHASE &&
+          distance < Snake.SNAKE_TARGET_RANGE
+        ) {
+          if (distance < minTargetDistance) {
+            minTargetDistance = distance;
+            targetSnake = otherSnake;
+          }
+        }
+      }
+    });
+
+    let moveX = this.direction.x;
+    let moveY = this.direction.y;
+
     // Decision making priority
     if (nearestThreat) {
       // Escape from threat
       const dx = head.x - nearestThreat.segments[0].x;
       const dy = head.y - nearestThreat.segments[0].y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      moveX = dx / distance;
-      moveY = dy / distance;
+      moveX = dx / distance + avoidanceForce.x;
+      moveY = dy / distance + avoidanceForce.y;
     } else if (targetSnake && Math.random() < 0.7) {
-      // 70% chance to chase prey
-      // Chase target snake
-      moveX = (targetSnake.segments[0].x - head.x) / minTargetDistance;
-      moveY = (targetSnake.segments[0].y - head.y) / minTargetDistance;
+      // Chase prey
+      moveX =
+        (targetSnake.segments[0].x - head.x) / minTargetDistance +
+        avoidanceForce.x;
+      moveY =
+        (targetSnake.segments[0].y - head.y) / minTargetDistance +
+        avoidanceForce.y;
     } else if (nearestFood) {
       // Move toward food
-      moveX = (nearestFood.position.x - head.x) / minFoodDistance;
-      moveY = (nearestFood.position.y - head.y) / minFoodDistance;
+      moveX =
+        (nearestFood.position.x - head.x) / minFoodDistance + avoidanceForce.x;
+      moveY =
+        (nearestFood.position.y - head.y) / minFoodDistance + avoidanceForce.y;
     } else {
-      // No immediate targets - explore with purpose
-      // Use sine waves for smooth, natural-looking movement
+      // Explore
       const time = Date.now() * 0.001;
-      moveX = Math.cos(time * 0.5);
-      moveY = Math.sin(time * 0.7);
+      moveX =
+        Math.cos(time * 0.5) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT) +
+        avoidanceForce.x * Snake.RANDOM_EXPLORATION_WEIGHT;
+      moveY =
+        Math.sin(time * 0.7) * (1 - Snake.RANDOM_EXPLORATION_WEIGHT) +
+        avoidanceForce.y * Snake.RANDOM_EXPLORATION_WEIGHT;
     }
 
     // Normalize movement vector
     const length = Math.sqrt(moveX * moveX + moveY * moveY);
-    let desiredDirection = { x: 0, y: 0 };
     if (length > 0) {
-      desiredDirection = { x: moveX / length, y: moveY / length };
+      return { x: moveX / length, y: moveY / length };
+    } else {
+      return { x: 0, y: 0 }; // Or a default direction
     }
+  }
 
-    const smoothingFactor = 0.1; // Adjust as needed
+  applyMovement(targetDirection) {
+    const smoothingFactor = 0.1;
     this.direction.x =
       this.direction.x * (1 - smoothingFactor) +
-      desiredDirection.x * smoothingFactor;
+      targetDirection.x * smoothingFactor;
     this.direction.y =
       this.direction.y * (1 - smoothingFactor) +
-      desiredDirection.y * smoothingFactor;
+      targetDirection.y * smoothingFactor;
 
     const smoothedLength = Math.sqrt(
       this.direction.x * this.direction.x + this.direction.y * this.direction.y
@@ -768,13 +809,12 @@ class Snake {
     const scale = 1.6;
     let trailScale = 1; // Initialize trail scale
 
-    // Determine trail scale based on snake length
-    if (this.segments.length > UPSCALE_LENGTH_LV3) {
-      trailScale = 2.8 / scale; // Scale up to match level 3
-    } else if (this.segments.length > UPSCALE_LENGTH_LV2) {
-      trailScale = 2.4 / scale; // Scale up to match level 2
-    } else if (this.segments.length > UPSCALE_LENGTH_LV1) {
-      trailScale = 2.0 / scale; // Scale up to match level 1
+    // Determine trail scale based on snake length (5 levels)
+    for (let i = UPSCALE_LENGTHS.length - 1; i >= 0; i--) {
+      if (this.segments.length > UPSCALE_LENGTHS[i]) {
+        trailScale = (1.6 + i * 0.4) / 1.6; // Scale up to match level
+        break; // Stop once the appropriate level is found
+      }
     }
 
     ctx.globalAlpha = this.opacity;
@@ -852,8 +892,8 @@ class Snake {
         // Determine segment color based on dual color settings
         ctx.fillStyle =
           this.useDualColors && Math.floor(i / 10) % 2 === 0
-            ? this.secondaryColor
-            : this.color;
+            ? this.color
+            : this.secondaryColor;
 
         ctx.beginPath();
         ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
@@ -1371,6 +1411,22 @@ function colorDistance(rgb1, rgb2) {
   );
 }
 
+function getRandomSafePosition() {
+  const SAFE_DISTANCE_FROM_BORDER = 400;
+
+  let x, y;
+  do {
+    x = Math.random() * WORLD_WIDTH;
+    y = Math.random() * WORLD_HEIGHT;
+  } while (
+    x < SAFE_DISTANCE_FROM_BORDER ||
+    x > WORLD_WIDTH - SAFE_DISTANCE_FROM_BORDER ||
+    y < SAFE_DISTANCE_FROM_BORDER ||
+    y > WORLD_HEIGHT - SAFE_DISTANCE_FROM_BORDER
+  );
+  return { x, y };
+}
+
 function checkCollisions() {
   allSnakes.forEach((snake) => {
     if (!snake.isAlive || snake.isDying) return;
@@ -1407,13 +1463,17 @@ function checkCollisions() {
         // *** KEY CHANGE: Reduced flying food probability ***
         const isFlying = Math.random() < 0.1; // 10% chance (adjust as needed)
 
-        // *** KEY CHANGE: Controlled food spawning ***
+        // Controlled food spawning
         const currentTime = Date.now();
         if (
           foods.length < MAX_TOTAL_FOODS &&
           currentTime - lastFoodSpawn >= FOOD_SPAWN_DELAY
         ) {
-          foods.push(new Food(isFlying));
+          const isFlying = Math.random() < 0.1;
+          const safePosition = getRandomSafePosition(); // Get a safe position
+          const newFood = new Food(isFlying);
+          newFood.position = safePosition; // Set the food's position to the safe one
+          foods.push(newFood);
           lastFoodSpawn = currentTime;
         }
 
@@ -1488,9 +1548,77 @@ function handleSnakeDeath(snake) {
 
     // Create new bot (if the snake was a bot)
     if (snake.isBot) {
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
-      const newBot = createBot(x, y, getRandomColor(), allSnakes);
+      const newBot = createBot(0, 0, getRandomColor(), allSnakes); // Initial position is irrelevant
+
+      // Use the Snake class's findSafeSpawnPosition method
+      const safePosition = newBot.findSafeSpawnPosition(); // Call it on the new bot instance
+
+      newBot.reset(safePosition.x, safePosition.y); // *RESET* the bot at the safe position
+
+      // Give the new bot a random direction away from other snakes
+      let bestDirection = { x: 0, y: 0 };
+      let maxSeparation = -1;
+
+      for (const otherSnake of allSnakes) {
+        if (otherSnake.isAlive && otherSnake !== newBot) {
+          const dx = newBot.segments[0].x - otherSnake.segments[0].x;
+          const dy = newBot.segments[0].y - otherSnake.segments[0].y;
+          const separation = Math.sqrt(dx * dx + dy * dy);
+
+          if (separation > maxSeparation) {
+            maxSeparation = separation;
+            bestDirection = { x: -dx, y: -dy };
+          }
+        }
+      }
+
+      // Normalize the direction vector
+      const length = Math.sqrt(
+        bestDirection.x * bestDirection.x + bestDirection.y * bestDirection.y
+      );
+      if (length > 0) {
+        bestDirection.x /= length;
+        bestDirection.y /= length;
+      } else {
+        // Default direction if no other snakes are found
+        bestDirection = { x: Math.random() - 0.5, y: Math.random() - 0.5 };
+        const length = Math.sqrt(
+          bestDirection.x * bestDirection.x + bestDirection.y * bestDirection.y
+        );
+        bestDirection.x /= length;
+        bestDirection.y /= length;
+      }
+
+      if (
+        bestDirection.x !== newBot.direction.x ||
+        bestDirection.y !== newBot.direction.y
+      ) {
+        newBot.targetDirection = bestDirection;
+      } else {
+        // Choose a slightly different target direction (e.g., rotate by a small angle)
+        const angle = Math.random() * 0.1 - 0.05; // Small random angle
+        const newTargetX =
+          bestDirection.x * Math.cos(angle) - bestDirection.y * Math.sin(angle);
+        const newTargetY =
+          bestDirection.x * Math.sin(angle) + bestDirection.y * Math.cos(angle);
+        newBot.targetDirection = { x: newTargetX, y: newTargetY };
+      }
+
+      // Add a small random offset to targetDirection
+      const offsetMagnitude = 0.05; // Adjust this value (0.01 - 0.1 are good ranges)
+      newBot.targetDirection.x += (Math.random() - 0.5) * offsetMagnitude;
+      newBot.targetDirection.y += (Math.random() - 0.5) * offsetMagnitude;
+
+      // Normalize targetDirection again after applying the offset (important!)
+      const targetLength = Math.sqrt(
+        newBot.targetDirection.x * newBot.targetDirection.x +
+          newBot.targetDirection.y * newBot.targetDirection.y
+      );
+      newBot.targetDirection.x /= targetLength;
+      newBot.targetDirection.y /= targetLength;
+
+      newBot.direction = bestDirection; // Keep direction the same as before
+
       allSnakes.push(newBot);
       bots.push(newBot);
     }
